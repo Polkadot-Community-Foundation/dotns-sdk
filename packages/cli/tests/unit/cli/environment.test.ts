@@ -16,15 +16,15 @@ afterEach(() => {
   if (originalRpc === undefined) delete process.env[ENV.RPC];
   else process.env[ENV.RPC] = originalRpc;
 
-  setActiveDotnsEnvironment("paseo-v2");
+  setActiveDotnsEnvironment("summit");
 });
 
-test("defaults to paseo-v2", () => {
+test("defaults to summit", () => {
   delete process.env[ENV.DOTNS_ENV];
   delete process.env[ENV.RPC];
 
-  expect(resolveRpc()).toBe("wss://paseo-asset-hub-next-rpc.polkadot.io");
-  expect(getActiveDotnsEnvironment().id).toBe("paseo-v2");
+  expect(resolveRpc()).toBe("wss://summit-asset-hub-rpc.polkadot.io");
+  expect(getActiveDotnsEnvironment().id).toBe("summit");
 });
 
 test("accepts friendly paseo-v2 aliases", () => {

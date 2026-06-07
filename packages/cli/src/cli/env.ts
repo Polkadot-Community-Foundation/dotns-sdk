@@ -31,7 +31,7 @@ export function resolveRpc(maybeRpc?: string, maybeEnvironment?: string): string
   const resolved = maybeRpc || process.env[ENV.RPC] || environment.rpc;
   if (!resolved) {
     throw new Error(
-      `Environment '${environment.id}' has no Asset Hub RPC configured. Set --rpc, ${ENV.RPC}, or use --env paseo-v2.`,
+      `Environment '${environment.id}' has no Asset Hub RPC configured. Set --rpc, ${ENV.RPC}, or use --env summit.`,
     );
   }
   return resolved;
@@ -48,7 +48,7 @@ export function resolveBulletinRpc(maybeRpc?: string, maybeEnvironment?: string)
   const resolved = maybeRpc || process.env[ENV.BULLETIN_RPC] || environment.bulletinRpc;
   if (!resolved) {
     throw new Error(
-      `Environment '${environment.id}' has no bulletin RPC configured. Set --bulletin-rpc, ${ENV.BULLETIN_RPC}, or use --env paseo-v2.`,
+      `Environment '${environment.id}' has no bulletin RPC configured. Set --bulletin-rpc, ${ENV.BULLETIN_RPC}, or use --env summit.`,
     );
   }
   return resolved;

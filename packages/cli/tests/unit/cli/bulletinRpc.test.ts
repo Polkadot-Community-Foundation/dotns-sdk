@@ -12,14 +12,14 @@ afterEach(() => {
   if (originalBulletinRpc === undefined) delete process.env[ENV.BULLETIN_RPC];
   else process.env[ENV.BULLETIN_RPC] = originalBulletinRpc;
 
-  setActiveDotnsEnvironment("paseo-v2");
+  setActiveDotnsEnvironment("summit");
 });
 
-test("paseo-v2 default resolves to the existing bulletin RPC", () => {
+test("summit default resolves to its bulletin RPC", () => {
   delete process.env[ENV.DOTNS_ENV];
   delete process.env[ENV.BULLETIN_RPC];
 
-  expect(resolveBulletinRpc()).toBe("wss://paseo-bulletin-next-rpc.polkadot.io");
+  expect(resolveBulletinRpc()).toBe("wss://summit-bulletin-rpc.polkadot.io");
 });
 
 test("explicit argument wins over env var and active env", () => {

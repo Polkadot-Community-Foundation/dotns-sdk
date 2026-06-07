@@ -274,7 +274,7 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
   },
 };
 
-export const DEFAULT_DOTNS_ENVIRONMENT: DotnsEnvironmentId = "paseo-v2";
+export const DEFAULT_DOTNS_ENVIRONMENT: DotnsEnvironmentId = "summit";
 
 let activeDotnsEnvironment: DotnsEnvironmentId = DEFAULT_DOTNS_ENVIRONMENT;
 
