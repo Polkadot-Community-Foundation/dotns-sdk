@@ -14,12 +14,14 @@ import DotnsPopController from "../../abis/DotnsPopController.json" assert { typ
 export const PREVIEW_BASE_URL = "http://dotns.paseo.li/#/preview";
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
+export const SUMMIT_ASSET_HUB_URL = "wss://summit-asset-hub-rpc.polkadot.io";
 export const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
 export const PERSONHOOD_PRECOMPILE_ADDRESS =
   "0x000000000000000000000000000000000a010000" as Address;
 export const PERSONHOOD_CONTEXT =
   "0x646f746e73000000000000000000000000000000000000000000000000000000" as Hex;
 export const DEFAULT_BULLETIN_RPC = "wss://paseo-bulletin-next-rpc.polkadot.io";
+export const SUMMIT_BULLETIN_RPC = "wss://summit-bulletin-rpc.polkadot.io";
 export const DEFAULT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MAX_RETRIES = 5;
@@ -127,7 +129,7 @@ export const PASEO_BULLETIN_PEERS: readonly string[] = [
   "/dns4/paseo-bulletin-next-rpc-node-1.polkadot.io/tcp/443/wss/p2p/12D3KooWKMc4jJsU7fdEsis4AsM8Assk5jFqhEUEa2ZSiWJGKpfv",
 ];
 
-export const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet"] as const;
+export const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet", "summit"] as const;
 export type DotnsEnvironmentId = (typeof DOTNS_ENVIRONMENT_IDS)[number];
 
 export type DotnsContractAddresses = {
@@ -241,6 +243,33 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     },
     bulletinRpc: "wss://previewnet.substrate.dev/bulletin",
     ipfsGatewayUrl: "https://previewnet.substrate.dev/ipfs",
+    bulletinP2pPeers: [],
+  },
+  // Summit reuses EVM chain id 420420417 but is a distinct network from Paseo.
+  // DotNS deployed to Summit 2026-06-07 (manifest summit-asset-hub/420420417.json);
+  // address book below. MULTICALL3 is this deploy's own instance, not the shared singleton.
+  summit: {
+    id: "summit",
+    label: "Summit",
+    aliases: ["summit"],
+    rpc: SUMMIT_ASSET_HUB_URL,
+    // TODO(summit): set the real block explorer URL once known.
+    blockExplorerUrl: "",
+    contracts: {
+      DOTNS_REGISTRAR: "0xf3969bCBE60463302306663C62A6A8ef91ab9aA5" as Address,
+      DOTNS_REGISTRAR_CONTROLLER: "0xA68a5b2A6be6d014be0dB07c0ed4bacc4A6A570A" as Address,
+      DOTNS_REGISTRY: "0xFb7AB7E142ED0248D77198CA8722D67C1930D783" as Address,
+      DOTNS_RESOLVER: "0xC7f1C3B16BFd0c5910EE37a4a2033f4506AcE94d" as Address,
+      DOTNS_CONTENT_RESOLVER: "0xf110e5799c3f0adb8ED885C02c45Ecfe7fD86226" as Address,
+      STORE_FACTORY: "0x2947af3CBFb45b89610524a25921C32cB65C4C39" as Address,
+      DOTNS_RULES: "0x6331e51C9AfC73BfE12562fd160BA2c66A73f984" as Address,
+      DOTNS_POP_CONTROLLER: "0xC7DD78B145ed109092A2d1E79324E5FE219B9518" as Address,
+      DOTNS_NAME_ESCROW: "0xDbE911007f8cd9876D384b8c025d3BB157DCCcA4" as Address,
+      MULTICALL3: "0x1C1044BEa5bDe0F435436bB52A8340fBE1D59847" as Address,
+    },
+    bulletinRpc: SUMMIT_BULLETIN_RPC,
+    // TODO(summit): set the IPFS gateway + bulletin P2P peers if/when operated.
+    ipfsGatewayUrl: null,
     bulletinP2pPeers: [],
   },
 };
