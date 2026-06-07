@@ -53,7 +53,7 @@ on:
         description: "Repository used for checked out composite actions and source builds"
         required: false
         type: string
-        default: "paritytech/dotns-sdk"
+        default: "Polkadot-Community-Foundation/dotns-sdk"
 
       use-car:
         description: "Merkleize with IPFS CLI and upload as a single CAR file"

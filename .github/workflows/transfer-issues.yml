@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Transfer to dotns
-        run: gh issue transfer "$ISSUE_URL" paritytech/dotns
+        run: gh issue transfer "$ISSUE_URL" Polkadot-Community-Foundation/dotns
         env:
           GH_TOKEN: ${{ secrets.DOTNS_SDK_ISSUE_TRANSFER }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
@@ -26,9 +26,9 @@ jobs:
     steps:
       - name: Transfer all open issues to dotns
         run: |
-          gh issue list --repo paritytech/dotns-sdk --state open --json url,labels --jq '.[] | select(.labels | map(.name) | all(. != "scope: benchmark" and . != "benchmark-request" and . != "benchmark-complete")) | .url' | while read -r issue_url; do
+          gh issue list --repo Polkadot-Community-Foundation/dotns-sdk --state open --json url,labels --jq '.[] | select(.labels | map(.name) | all(. != "scope: benchmark" and . != "benchmark-request" and . != "benchmark-complete")) | .url' | while read -r issue_url; do
             echo "Transferring $issue_url"
-            gh issue transfer "$issue_url" paritytech/dotns || echo "Failed to transfer $issue_url"
+            gh issue transfer "$issue_url" Polkadot-Community-Foundation/dotns || echo "Failed to transfer $issue_url"
           done
         env:
           GH_TOKEN: ${{ secrets.DOTNS_SDK_ISSUE_TRANSFER }}

@@ -45,7 +45,7 @@ jobs:
   deploy-app:
     name: Deploy App
     needs: build
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: my-app
       artifact-name: app-build
@@ -58,7 +58,7 @@ jobs:
   deploy-docs:
     name: Deploy Docs
     needs: [build, deploy-app]
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: my-app-docs
       artifact-name: docs-build
@@ -71,7 +71,7 @@ jobs:
   deploy-admin:
     name: Deploy Admin
     needs: [build, deploy-docs]
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: my-app-admin
       artifact-name: admin-build

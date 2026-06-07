@@ -7,7 +7,7 @@ body:
       value: |
         This tracker is for SDK and CLI bugs only.
 
-        Protocol bugs: https://github.com/paritytech/dotns/issues
+        Protocol bugs: https://github.com/Polkadot-Community-Foundation/dotns/issues
 
   - type: checkboxes
     id: preflight
@@ -26,7 +26,7 @@ body:
     attributes:
       label: Package
       options:
-        - "@parity/dotns-cli"
+        - "pcf-dotns-cli"
         - "Build/CI"
     validations:
       required: true

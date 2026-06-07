@@ -237,7 +237,7 @@ jobs:
 
   deploy:
     needs: build
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: myapp
       mode: \${{ github.event_name == 'push' && 'production' || 'preview' }}

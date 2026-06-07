@@ -176,7 +176,7 @@ The documentation has a recognisable architecture with a clear entry point (Intr
 - **Page/section:** ControllerPage code example (line 239), RegistryPage, ResolverPage, and 5 other contract pages
 - **Example problem:** All code examples use `controllerAbi`, `registryAbi`, `resolverAbi`, etc. without defining them or showing where to import them from. The ABI is not available as a published npm package.
 - **Why it matters:** A developer copying the code example will get `ReferenceError: controllerAbi is not defined`. The example is not runnable as written.
-- **Fix:** Either show a minimal inline ABI fragment for the called function, or add a comment explaining where to obtain the ABI (e.g. "ABI available at github.com/paritytech/dotns/abis/").
+- **Fix:** Either show a minimal inline ABI fragment for the called function, or add a comment explaining where to obtain the ABI (e.g. "ABI available at github.com/Polkadot-Community-Foundation/dotns/abis/").
 
 ### 4.2 Code examples missing `walletClient` setup
 

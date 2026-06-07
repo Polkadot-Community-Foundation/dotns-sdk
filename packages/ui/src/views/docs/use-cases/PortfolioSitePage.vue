@@ -239,7 +239,7 @@ on:
 
 jobs:
   deploy:
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: yourname
       mode: production

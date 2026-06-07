@@ -181,7 +181,7 @@
         To register a reserved name, you need to submit a whitelist request through the DotNS
         governance process. Open a
         <a
-          href="https://github.com/paritytech/dotns/issues/new?template=WHITELIST_REQUEST.yml"
+          href="https://github.com/Polkadot-Community-Foundation/dotns/issues/new?template=WHITELIST_REQUEST.yml"
           target="_blank"
           rel="noopener noreferrer"
           class="text-dot-accent hover:text-dot-accent-hover underline"

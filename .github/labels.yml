@@ -32,7 +32,7 @@
 
 - name: "pkg: cli"
   color: "c5def5"
-  description: "@parity/dotns-cli"
+  description: "pcf-dotns-cli"
 
 - name: "pkg: ui"
   color: "c5def5"
@@ -128,7 +128,7 @@
 
 - name: "upstream"
   color: "e99695"
-  description: "Related to paritytech/dotns"
+  description: "Related to Polkadot-Community-Foundation/dotns"
 
 - name: "scope: benchmark"
   color: "1d76db"

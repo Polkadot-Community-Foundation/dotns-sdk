@@ -14,7 +14,7 @@ Frontend application for managing usernames registered on **dotns**.
 Clone the repository and move into the UI directory:
 
 ```bash
-git clone https://github.com/paritytech/dotns-ui
+git clone https://github.com/Polkadot-Community-Foundation/dotns-ui
 cd dotns-ui
 ```
 

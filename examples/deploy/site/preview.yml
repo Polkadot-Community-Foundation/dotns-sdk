@@ -19,7 +19,7 @@ jobs:
   preview:
     name: Preview
     needs: build
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: example
       artifact-name: site-preview

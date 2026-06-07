@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Syncs Dotns contract ABIs from the latest paritytech/dotns GitHub release.
+// Syncs Dotns contract ABIs from the latest Polkadot-Community-Foundation/dotns GitHub release.
 //
 // - Downloads only the ABIs the SDK consumes (see ABI_NAMES below).
 // - Writes to packages/cli/abis/ and packages/ui/abis/.
@@ -19,7 +19,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPO = "paritytech/dotns";
+const REPO = "Polkadot-Community-Foundation/dotns";
 const ABI_NAMES = [
 	"DotnsContentResolver",
 	"DotnsNameEscrow",
