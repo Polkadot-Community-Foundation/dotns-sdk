@@ -212,7 +212,7 @@ jobs:
                 "",
                 "Install globally:",
                 "```bash",
-                `npm install -g ./parity-dotns-cli-${version}.tgz`,
+                `npm install -g ./pcf-dotns-cli-${version}.tgz`,
                 "```",
                 "",
                 "Verify:",
@@ -327,13 +327,13 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.version.outputs.version }}"
-          tar -czf "dotns-ui-${VERSION}.tar.gz" -C packages/ui/dist .
+          tar -czf "pcf-dotns-ui-${VERSION}.tar.gz" -C packages/ui/dist .
 
       - name: Upload UI tarball
         uses: actions/upload-artifact@v4
         with:
           name: ui-release-tarball
-          path: dotns-ui-*.tar.gz
+          path: pcf-dotns-ui-*.tar.gz
           retention-days: 7
 
       - name: Upload UI site artifact
@@ -376,17 +376,17 @@ jobs:
 
           Install from npm:
           \`\`\`bash
-          npm install -g @parity/dotns-cli
+          npm install -g pcf-dotns-cli
           \`\`\`
 
           Or with other package managers:
 
           | Package Manager | Command |
           |:----------------|:--------|
-          | npm | \`npm install -g @parity/dotns-cli\` |
-          | yarn | \`yarn global add @parity/dotns-cli\` |
-          | bun | \`bun add -g @parity/dotns-cli\` |
-          | pnpm | \`pnpm add -g @parity/dotns-cli\` |
+          | npm | \`npm install -g pcf-dotns-cli\` |
+          | yarn | \`yarn global add pcf-dotns-cli\` |
+          | bun | \`bun add -g pcf-dotns-cli\` |
+          | pnpm | \`pnpm add -g pcf-dotns-cli\` |
 
           Verify:
           \`\`\`bash
@@ -397,12 +397,12 @@ jobs:
 
           Download:
           \`\`\`bash
-          gh release download ${TAG} -p "dotns-ui-*.tar.gz" -R ${REPO}
+          gh release download ${TAG} -p "pcf-dotns-ui-*.tar.gz" -R ${REPO}
           \`\`\`
 
           Extract:
           \`\`\`bash
-          mkdir -p dotns-ui && tar -xzf dotns-ui-${VERSION}.tar.gz -C dotns-ui
+          mkdir -p dotns-ui && tar -xzf pcf-dotns-ui-${VERSION}.tar.gz -C dotns-ui
           \`\`\`
           EOF
 
@@ -411,7 +411,7 @@ jobs:
         with:
           files: |
             artifacts/*.tgz
-            artifacts/dotns-ui-*.tar.gz
+            artifacts/pcf-dotns-ui-*.tar.gz
           body_path: release-body.md
           generate_release_notes: true
           prerelease: ${{ needs.build.outputs.prerelease == 'true' }}

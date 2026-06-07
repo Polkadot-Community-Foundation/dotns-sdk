@@ -56,7 +56,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.config.outputs.matrix) }}
 
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: deploy-benchmark-${{ matrix.slug }}
       artifact-name: deploy-benchmark-${{ matrix.slug }}

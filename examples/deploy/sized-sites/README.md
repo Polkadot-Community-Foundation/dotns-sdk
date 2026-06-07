@@ -87,7 +87,7 @@ The page only depends on the JSON structure it fetches from `dashboard/benchmark
     {
       "benchmarkDate": "2026-03-24",
       "benchmarkTimestamp": "2026-03-24 00:07 CET",
-      "runUrl": "https://github.com/paritytech/dotns-sdk/actions/runs/123456789",
+      "runUrl": "https://github.com/Polkadot-Community-Foundation/dotns-sdk/actions/runs/123456789",
       "reports": [
         {
           "size": "1MB",

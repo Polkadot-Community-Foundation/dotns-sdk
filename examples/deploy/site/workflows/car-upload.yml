@@ -36,7 +36,7 @@ jobs:
     name: Deploy Preview
     needs: build
     if: github.event_name == 'pull_request'
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: my-app
       artifact-name: site
@@ -50,7 +50,7 @@ jobs:
     name: Deploy Production
     needs: build
     if: github.event_name == 'push'
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: my-app
       artifact-name: site

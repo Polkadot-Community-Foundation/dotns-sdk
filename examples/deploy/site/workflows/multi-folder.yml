@@ -41,7 +41,7 @@ jobs:
 
   deploy-docs:
     needs: build-docs
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: my-project
       subname: docs
@@ -54,7 +54,7 @@ jobs:
 
   deploy-dashboard:
     needs: build-dashboard
-    uses: paritytech/dotns-sdk/.github/workflows/deploy.yml@main
+    uses: Polkadot-Community-Foundation/dotns-sdk/.github/workflows/deploy.yml@main
     with:
       basename: my-project
       subname: dashboard

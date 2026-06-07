@@ -15,5 +15,7 @@ jobs:
       - uses: actions/add-to-project@v1.0.2
         continue-on-error: true
         with:
-          project-url: https://github.com/orgs/paritytech/projects/237
+          # TODO(PCF): set the real Polkadot-Community-Foundation project board number.
+          # Harmless until then (continue-on-error); also needs the PROJECT_TOKEN secret.
+          project-url: https://github.com/orgs/Polkadot-Community-Foundation/projects/1
           github-token: ${{ secrets.PROJECT_TOKEN }}

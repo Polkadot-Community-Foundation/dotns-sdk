@@ -1,5 +1,5 @@
 {
-  "name": "@parity/dotns-cli",
+  "name": "pcf-dotns-cli",
   "module": "index.ts",
   "version": "0.7.0",
   "type": "module",

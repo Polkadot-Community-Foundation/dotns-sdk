@@ -18,7 +18,7 @@ This is reference and proof-of-concept tooling for the DotNS protocol, intended 
 
 - TypeScript packages are the primary surface, using Bun workspaces under `packages/*`.
 - Rust crates may exist when they reduce duplication or provide tooling that should not depend on Node, under `crates/*` as a Cargo workspace.
-- Shared artefacts that must be consistent across languages (ABIs, deployment addresses, schemas) live in `shared/*` (for example `shared/abi/`, `shared/deployments/`, `shared/schemas/`) and are treated as the source of truth for cross-runtime consumers. The contracts themselves live in the main DotNS repository can be found [here](https://github.com/paritytech/dotns)
+- Shared artefacts that must be consistent across languages (ABIs, deployment addresses, schemas) live in `shared/*` (for example `shared/abi/`, `shared/deployments/`, `shared/schemas/`) and are treated as the source of truth for cross-runtime consumers. The contracts themselves live in the main DotNS repository can be found [here](https://github.com/Polkadot-Community-Foundation/dotns)
 
 ## What belongs here
 

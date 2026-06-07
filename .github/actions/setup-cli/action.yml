@@ -15,7 +15,7 @@ runs:
       if: inputs.source == 'release'
       continue-on-error: true
       shell: bash
-      run: npm install -g @parity/dotns-cli
+      run: npm install -g pcf-dotns-cli
 
     - name: Download CLI release tarball (fallback)
       id: download
@@ -32,7 +32,7 @@ runs:
           curl -fsSL \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
-            https://api.github.com/repos/paritytech/dotns-sdk/releases/latest |
+            https://api.github.com/repos/Polkadot-Community-Foundation/dotns-sdk/releases/latest |
             jq -r '.assets[] | select(.name | test("dotns-cli.*\\.tgz$")) | .url' |
             head -n 1
         )
