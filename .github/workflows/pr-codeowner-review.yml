@@ -18,24 +18,16 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const pull_number = context.payload.pull_request.number;
-            const author = context.payload.pull_request.user.login;
 
-            // Keep this list in sync with .github/CODEOWNERS
-            const codeOwners = [
-              "filvecchiato",
-              "waytwotall",
-              "andrew-ifrita",
-              "corey-hathaway",
-              "sphamjoli",
-            ];
-
-            const reviewers = codeOwners.filter(u => u !== author);
-
-            if (reviewers.length === 0) return;
-
-            await github.rest.pulls.requestReviewers({
-              owner,
-              repo,
-              pull_number,
-              reviewers,
-            });
+            // Request review from the org maintainers team (see .github/CODEOWNERS).
+            // Wrapped so a missing team / non-collaborator never fails the check.
+            try {
+              await github.rest.pulls.requestReviewers({
+                owner,
+                repo,
+                pull_number,
+                team_reviewers: ["maintainers"],
+              });
+            } catch (error) {
+              core.warning(`Could not request code owner review: ${error.message}`);
+            }
