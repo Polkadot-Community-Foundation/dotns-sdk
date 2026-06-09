@@ -41,10 +41,10 @@ on:
         default: ""
 
       env:
-        description: "DotNS environment (paseo-v2 | previewnet)"
+        description: "DotNS environment (summit | paseo-v2 | previewnet)"
         required: false
         type: string
-        default: paseo-v2
+        default: summit
 
     secrets:
       dotns-mnemonic:

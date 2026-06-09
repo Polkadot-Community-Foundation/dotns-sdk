@@ -105,7 +105,7 @@ jobs:
       cli-source: source
       use-car: false
       register-base: true
-      env: paseo-v2
+      env: summit
       sdk-repository: ${{ github.event.pull_request.head.repo.full_name }}
       sdk-ref: ${{ github.event.pull_request.head.sha }}
     secrets:

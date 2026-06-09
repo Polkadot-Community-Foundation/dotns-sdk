@@ -21,7 +21,7 @@ inputs:
   env:
     description: "DotNS environment used by cache/store operations"
     required: false
-    default: "paseo-v2"
+    default: "summit"
   build-path:
     description: "Path to the build directory to upload"
     required: false

@@ -11,7 +11,7 @@ inputs:
   env:
     description: "DotNS environment"
     required: false
-    default: "paseo-v2"
+    default: "summit"
   basename:
     description: "Base domain without .dot"
     required: true
