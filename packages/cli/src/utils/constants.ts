@@ -22,6 +22,7 @@ export const PERSONHOOD_CONTEXT =
   "0x646f746e73000000000000000000000000000000000000000000000000000000" as Hex;
 export const DEFAULT_BULLETIN_RPC = "wss://paseo-bulletin-next-rpc.polkadot.io";
 export const SUMMIT_BULLETIN_RPC = "wss://summit-bulletin-rpc.polkadot.io";
+export const SUMMIT_IPFS_GATEWAY_URL = "https://summit-ipfs.polkadot.io/ipfs";
 export const DEFAULT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MAX_RETRIES = 5;
@@ -268,8 +269,8 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
       MULTICALL3: "0x1C1044BEa5bDe0F435436bB52A8340fBE1D59847" as Address,
     },
     bulletinRpc: SUMMIT_BULLETIN_RPC,
-    // TODO(summit): set the IPFS gateway + bulletin P2P peers if/when operated.
-    ipfsGatewayUrl: null,
+    ipfsGatewayUrl: SUMMIT_IPFS_GATEWAY_URL,
+    // TODO(summit): set the bulletin P2P peers if/when operated.
     bulletinP2pPeers: [],
   },
 };

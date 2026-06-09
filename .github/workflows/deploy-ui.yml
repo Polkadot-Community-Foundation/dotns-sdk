@@ -107,7 +107,7 @@ jobs:
       use-car: false
       upload-concurrency: 10
       cli-source: source
-      env: paseo-v2
+      env: summit
       sdk-ref: ${{ github.head_ref || github.ref }}
     secrets:
       dotns-mnemonic: ${{ secrets.DOTNS_MNEMONIC }}
@@ -127,7 +127,7 @@ jobs:
       use-car: false
       upload-concurrency: 10
       cli-source: source
-      env: paseo-v2
+      env: summit
       sdk-ref: ${{ github.head_ref || github.ref }}
     secrets:
       dotns-mnemonic: ${{ secrets.DOTNS_MNEMONIC }}
