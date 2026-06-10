@@ -1,6 +1,6 @@
 import { getSharedHeliaClient, type HeliaContentFetchResult } from "@/lib/heliaClient";
 
-const BULLETIN_VERIFICATION_GATEWAY = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
+const BULLETIN_VERIFICATION_GATEWAY = "https://summit-ipfs.polkadot.io/ipfs";
 const GATEWAY_FETCH_TIMEOUT_MS = 15_000;
 const IPFS_VERIFICATION_TIMEOUT_MS = 15_000;
 const P2P_FETCH_TIMEOUT_MS = 10_000;
