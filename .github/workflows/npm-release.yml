@@ -41,10 +41,25 @@ jobs:
       # npm_publish_automation (which PCF cannot dispatch to). The CLI is named
       # @polkadot-community-foundation/dotns-cli in-tree, so the packed tarball is already correctly
       # scoped and matches that repo's publishable-packages.json allowlist. The npm token lives
-      # only in the automation repo; the composite action mints a short-lived org-App token to
-      # authorize the dispatch (no personal/long-lived PAT).
-      - name: Publish via PCF npm-publish-automation
-        uses: Polkadot-Community-Foundation/npm-publish-automation/.github/actions/dispatch@main
+      # only in the automation repo. Dispatch is inlined (not the automation repo's composite
+      # action) to avoid resolving an action from a PRIVATE cross-repo (org private-action sharing
+      # is plan-gated); uses only the public create-github-app-token + a gh api call.
+      - name: Mint App token (dispatch scope)
+        id: app-token
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ secrets.PUBLISH_APP_ID }}
           private-key: ${{ secrets.PUBLISH_APP_PRIVATE_KEY }}
+          owner: Polkadot-Community-Foundation
+          repositories: npm-publish-automation
+
+      - name: Dispatch PCF npm-publish-automation
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          printf '{"ref":"main","inputs":{"repo":"%s","run_id":"%s","artifact_name":"packages"}}' \
+            "${{ github.repository }}" "${{ github.run_id }}" \
+          | gh api -X POST \
+              /repos/Polkadot-Community-Foundation/npm-publish-automation/actions/workflows/publish.yml/dispatches \
+              --input -
