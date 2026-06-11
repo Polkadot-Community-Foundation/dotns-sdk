@@ -33,14 +33,33 @@ jobs:
       - name: Upload packages artifact
         uses: actions/upload-artifact@v4
         with:
-          name: packages-${{ github.run_id }}
+          name: packages
           path: packs
 
-      - name: Trigger npm_publish_automation
-        uses: octokit/request-action@v2.x
+      # PCF publishes under @polkadot-community-foundation via its own isolated publisher
+      # (Polkadot-Community-Foundation/npm-publish-automation), NOT paritytech's private
+      # npm_publish_automation (which PCF cannot dispatch to). The CLI is named
+      # @polkadot-community-foundation/dotns-cli in-tree, so the packed tarball is already correctly
+      # scoped and matches that repo's publishable-packages.json allowlist. The npm token lives
+      # only in the automation repo. Dispatch is inlined (not the automation repo's composite
+      # action) to avoid resolving an action from a PRIVATE cross-repo (org private-action sharing
+      # is plan-gated); uses only the public create-github-app-token + a gh api call.
+      - name: Mint App token (dispatch scope)
+        id: app-token
+        uses: actions/create-github-app-token@v1
         with:
-          route: POST /repos/paritytech/npm_publish_automation/actions/workflows/publish.yml/dispatches
-          ref: main
-          inputs: '${{ format(''{{ "repo": "{0}", "run_id": "{1}" }}'', github.repository, github.run_id) }}'
+          app-id: ${{ secrets.PUBLISH_APP_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_PRIVATE_KEY }}
+          owner: Polkadot-Community-Foundation
+          repositories: npm-publish-automation
+
+      - name: Dispatch PCF npm-publish-automation
         env:
-          GITHUB_TOKEN: ${{ secrets.NPM_PUBLISH_AUTOMATION_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          printf '{"ref":"main","inputs":{"repo":"%s","run_id":"%s","artifact_name":"packages"}}' \
+            "${{ github.repository }}" "${{ github.run_id }}" \
+          | gh api -X POST \
+              /repos/Polkadot-Community-Foundation/npm-publish-automation/actions/workflows/publish.yml/dispatches \
+              --input -

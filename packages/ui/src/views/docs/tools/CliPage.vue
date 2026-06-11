@@ -207,17 +207,17 @@ const installTabs = [
   {
     id: "npm",
     label: "npm",
-    code: "npm install -g pcf-dotns-cli",
+    code: "npm install -g @polkadot-community-foundation/dotns-cli",
   },
   {
     id: "bun",
     label: "bun",
-    code: "bun add -g pcf-dotns-cli",
+    code: "bun add -g @polkadot-community-foundation/dotns-cli",
   },
   {
     id: "yarn",
     label: "yarn",
-    code: "yarn global add pcf-dotns-cli",
+    code: "yarn global add @polkadot-community-foundation/dotns-cli",
   },
 ];
 

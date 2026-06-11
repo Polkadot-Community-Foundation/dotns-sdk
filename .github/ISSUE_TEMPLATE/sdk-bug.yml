@@ -26,7 +26,7 @@ body:
     attributes:
       label: Package
       options:
-        - "pcf-dotns-cli"
+        - "@polkadot-community-foundation/dotns-cli"
         - "Build/CI"
     validations:
       required: true

@@ -8,10 +8,10 @@ const selectedPm = ref<"npm" | "yarn" | "bun-mac" | "bun-win">("npm");
 const RELEASES_URL = "https://github.com/Polkadot-Community-Foundation/dotns-sdk/releases";
 
 const installCommands = {
-  npm: "npm install -g pcf-dotns-cli",
-  yarn: "yarn global add pcf-dotns-cli",
-  "bun-mac": "bun add -g pcf-dotns-cli",
-  "bun-win": "bun add -g pcf-dotns-cli",
+  npm: "npm install -g @polkadot-community-foundation/dotns-cli",
+  yarn: "yarn global add @polkadot-community-foundation/dotns-cli",
+  "bun-mac": "bun add -g @polkadot-community-foundation/dotns-cli",
+  "bun-win": "bun add -g @polkadot-community-foundation/dotns-cli",
 };
 
 const pmLabels = {

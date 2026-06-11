@@ -5,18 +5,18 @@ A command-line tool for registering and managing `.dot` domains on Polkadot.
 ## Installation
 
 ```bash
-npm install -g pcf-dotns-cli
+npm install -g @polkadot-community-foundation/dotns-cli
 ```
 
 <details>
 <summary>Other package managers</summary>
 
-| Package Manager | Command                         |
-| :-------------- | :------------------------------ |
-| npm             | `npm install -g pcf-dotns-cli`  |
-| yarn            | `yarn global add pcf-dotns-cli` |
-| pnpm            | `pnpm add -g pcf-dotns-cli`     |
-| bun             | `bun add -g pcf-dotns-cli`      |
+| Package Manager | Command                                                    |
+| :-------------- | :--------------------------------------------------------- |
+| npm             | `npm install -g @polkadot-community-foundation/dotns-cli`  |
+| yarn            | `yarn global add @polkadot-community-foundation/dotns-cli` |
+| pnpm            | `pnpm add -g @polkadot-community-foundation/dotns-cli`     |
+| bun             | `bun add -g @polkadot-community-foundation/dotns-cli`      |
 
 </details>
 
