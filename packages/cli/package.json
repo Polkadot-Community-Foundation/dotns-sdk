@@ -1,5 +1,5 @@
 {
-  "name": "pcf-dotns-cli",
+  "name": "@polkadot-community-foundation/dotns-cli",
   "module": "index.ts",
   "version": "0.7.0",
   "type": "module",

@@ -33,14 +33,18 @@ jobs:
       - name: Upload packages artifact
         uses: actions/upload-artifact@v4
         with:
-          name: packages-${{ github.run_id }}
+          name: packages
           path: packs
 
-      - name: Trigger npm_publish_automation
-        uses: octokit/request-action@v2.x
+      # PCF publishes under @polkadot-community-foundation via its own isolated publisher
+      # (Polkadot-Community-Foundation/npm-publish-automation), NOT paritytech's private
+      # npm_publish_automation (which PCF cannot dispatch to). The CLI is named
+      # @polkadot-community-foundation/dotns-cli in-tree, so the packed tarball is already correctly
+      # scoped and matches that repo's publishable-packages.json allowlist. The npm token lives
+      # only in the automation repo; the composite action mints a short-lived org-App token to
+      # authorize the dispatch (no personal/long-lived PAT).
+      - name: Publish via PCF npm-publish-automation
+        uses: Polkadot-Community-Foundation/npm-publish-automation/.github/actions/dispatch@main
         with:
-          route: POST /repos/paritytech/npm_publish_automation/actions/workflows/publish.yml/dispatches
-          ref: main
-          inputs: '${{ format(''{{ "repo": "{0}", "run_id": "{1}" }}'', github.repository, github.run_id) }}'
-        env:
-          GITHUB_TOKEN: ${{ secrets.NPM_PUBLISH_AUTOMATION_TOKEN }}
+          app-id: ${{ secrets.PUBLISH_APP_ID }}
+          private-key: ${{ secrets.PUBLISH_APP_PRIVATE_KEY }}

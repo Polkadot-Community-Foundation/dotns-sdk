@@ -32,7 +32,7 @@
 
 - name: "pkg: cli"
   color: "c5def5"
-  description: "pcf-dotns-cli"
+  description: "@polkadot-community-foundation/dotns-cli"
 
 - name: "pkg: ui"
   color: "c5def5"

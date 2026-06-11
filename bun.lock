@@ -12,7 +12,7 @@
       },
     },
     "packages/cli": {
-      "name": "pcf-dotns-cli",
+      "name": "@polkadot-community-foundation/dotns-cli",
       "version": "0.7.0",
       "bin": {
         "dotns": "./dist/cli.js",
@@ -647,6 +647,8 @@
     "@polkadot-api/wasm-executor": ["@polkadot-api/wasm-executor@0.2.3", "", {}, "sha512-B2h1o+Qlo9idpASaHvMSoViB2I5ko5OAfwfhYF8LQDkTADK0B+SeStzNj1Qn+FG34wqTuv7HzBCdjaUgzYINJQ=="],
 
     "@polkadot-api/ws-provider": ["@polkadot-api/ws-provider@0.7.5", "", { "dependencies": { "@polkadot-api/json-rpc-provider": "0.0.4", "@polkadot-api/json-rpc-provider-proxy": "0.2.8", "@types/ws": "^8.18.1", "ws": "^8.19.0" } }, "sha512-2ZLEo0PAFeuOx2DUDkbex85HZMf9lgnmZ8oGB5+NaButIydkoqXy5SHYJNPc45GcZy2tvwzImMZInNMLa5GJhg=="],
+
+    "@polkadot-community-foundation/dotns-cli": ["@polkadot-community-foundation/dotns-cli@workspace:packages/cli"],
 
     "@polkadot-labs/hdkd": ["@polkadot-labs/hdkd@0.0.26", "", { "dependencies": { "@polkadot-labs/hdkd-helpers": "~0.0.27" } }, "sha512-9B+egs7pIwmaxi3X7XBbruxS40aVbcdI1iIqSxfSOf4+RS52E+sgd3MW/LECWrHSof2h4ngcdsXRrOl95FVV8g=="],
 
@@ -2234,8 +2236,6 @@
 
     "pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
 
-    "pcf-dotns-cli": ["pcf-dotns-cli@workspace:packages/cli"],
-
     "pcf-dotns-ui": ["pcf-dotns-ui@workspace:packages/ui"],
 
     "picocolors": ["picocolors@1.1.1", "", {}, "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="],
@@ -2906,6 +2906,8 @@
 
     "@polkadot-api/ws-provider/ws": ["ws@8.20.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-sAt8BhgNbzCtgGbt2OxmpuryO63ZoDk/sqaB/znQm94T4fCEsy/yV+7CdC1kJhOU9lboAEU7R3kquuycDoibVA=="],
 
+    "@polkadot-community-foundation/dotns-cli/@polkadot-api/descriptors": ["@polkadot-api/descriptors@file:packages/cli/.papi/descriptors", { "peerDependencies": { "polkadot-api": ">=1.21.0" } }],
+
     "@polkadot/api-contract/@polkadot/api": ["@polkadot/api@16.5.6", "", { "dependencies": { "@polkadot/api-augment": "16.5.6", "@polkadot/api-base": "16.5.6", "@polkadot/api-derive": "16.5.6", "@polkadot/keyring": "^14.0.3", "@polkadot/rpc-augment": "16.5.6", "@polkadot/rpc-core": "16.5.6", "@polkadot/rpc-provider": "16.5.6", "@polkadot/types": "16.5.6", "@polkadot/types-augment": "16.5.6", "@polkadot/types-codec": "16.5.6", "@polkadot/types-create": "16.5.6", "@polkadot/types-known": "16.5.6", "@polkadot/util": "^14.0.3", "@polkadot/util-crypto": "^14.0.3", "eventemitter3": "^5.0.1", "rxjs": "^7.8.1", "tslib": "^2.8.1" } }, "sha512-5h/X3pY8WpqGk4XTaiIUjKD6Pnk8k4bJ6EIwPKLP8/kfFWKSOenpN6ggZxANr+Qj+RgXrp4TxJVcuhXSiBh9Sg=="],
 
     "@polkadot/api-contract/@polkadot/api-augment": ["@polkadot/api-augment@16.5.6", "", { "dependencies": { "@polkadot/api-base": "16.5.6", "@polkadot/rpc-augment": "16.5.6", "@polkadot/types": "16.5.6", "@polkadot/types-augment": "16.5.6", "@polkadot/types-codec": "16.5.6", "@polkadot/util": "^14.0.3", "tslib": "^2.8.1" } }, "sha512-bunJF1c3nIuDtU6iwa+reTt9U47Y8iOC8Gw7PfANlZmLJmO/XVXnWc3JJLM+g9ESDn2raHJELeWBFVOXQrbtUw=="],
@@ -3221,8 +3223,6 @@
     "parse-json/type-fest": ["type-fest@4.41.0", "", {}, "sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA=="],
 
     "parse5-htmlparser2-tree-adapter/parse5": ["parse5@6.0.1", "", {}, "sha512-Ofn/CTFzRGTTxwpNEs9PP93gXShHcTq255nzRYSKe8AkVpZY7e1fpmTfOyoIvjP5HG7Z2ZM7VS9PPhQGW2pOpw=="],
-
-    "pcf-dotns-cli/@polkadot-api/descriptors": ["@polkadot-api/descriptors@file:packages/cli/.papi/descriptors", { "peerDependencies": { "polkadot-api": ">=1.21.0" } }],
 
     "pcf-dotns-ui/@polkadot-api/descriptors": ["@polkadot-api/descriptors@file:packages/ui/.papi/descriptors", { "peerDependencies": { "polkadot-api": ">=1.21.0" } }],
 

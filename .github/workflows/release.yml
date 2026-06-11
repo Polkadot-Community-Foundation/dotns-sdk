@@ -376,17 +376,17 @@ jobs:
 
           Install from npm:
           \`\`\`bash
-          npm install -g pcf-dotns-cli
+          npm install -g @polkadot-community-foundation/dotns-cli
           \`\`\`
 
           Or with other package managers:
 
           | Package Manager | Command |
           |:----------------|:--------|
-          | npm | \`npm install -g pcf-dotns-cli\` |
-          | yarn | \`yarn global add pcf-dotns-cli\` |
-          | bun | \`bun add -g pcf-dotns-cli\` |
-          | pnpm | \`pnpm add -g pcf-dotns-cli\` |
+          | npm | \`npm install -g @polkadot-community-foundation/dotns-cli\` |
+          | yarn | \`yarn global add @polkadot-community-foundation/dotns-cli\` |
+          | bun | \`bun add -g @polkadot-community-foundation/dotns-cli\` |
+          | pnpm | \`pnpm add -g @polkadot-community-foundation/dotns-cli\` |
 
           Verify:
           \`\`\`bash
