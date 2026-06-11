@@ -12,6 +12,16 @@ import UserStore from "../../abis/UserStore.json" assert { type: "json" };
 import DotnsPopController from "../../abis/DotnsPopController.json" assert { type: "json" };
 
 export const PREVIEW_BASE_URL = "http://dotns.paseo.li/#/preview";
+
+// dot.li serves a name as a gateway subdomain: strip the .dot TLD and append the
+// gateway domain (mainnet dot.li, Paseo testnet paseo.li).
+export const DOTLI_GATEWAYS = ["dot.li", "paseo.li"] as const;
+
+/** Both dot.li viewing URLs for a name, e.g. ["https://alice.dot.li", "https://alice.paseo.li"]. */
+export function dotliViewUrls(name: string): string[] {
+  const stem = name.toLowerCase().replace(/\.dot$/, "");
+  return DOTLI_GATEWAYS.map((gateway) => `https://${stem}.${gateway}`);
+}
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
 export const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
@@ -21,7 +31,8 @@ export const PERSONHOOD_CONTEXT =
   "0x646f746e73000000000000000000000000000000000000000000000000000000" as Hex;
 export const DEFAULT_BULLETIN_RPC = "wss://paseo-bulletin-next-rpc.polkadot.io";
 export const DEFAULT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
-export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
+// Chain MaxTransactionSize; larger single uploads must be chunked.
+export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MAX_RETRIES = 5;
 export const MAX_UPLOAD_MAX_RETRIES = 20;
 export const UPLOAD_RETRY_BASE_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as const;
@@ -37,6 +48,8 @@ export const DEFAULT_MNEMONIC =
   "bottom drive obey lake curtain smoke basket hold race lonely fit walk";
 
 export const DEFAULT_SUDO_KEY_URI = "//Alice";
+
+export const MIN_KEYSTORE_PASSWORD_LENGTH = 6;
 
 // The Bulletin Authorizer that grants storage quota. //Eve is seeded into
 // AllowedAuthorizers on the bulletin testnet and dev runtimes (the same key the

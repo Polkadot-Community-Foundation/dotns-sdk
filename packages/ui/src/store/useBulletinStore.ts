@@ -1,18 +1,11 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { createClient, type PolkadotClient, type PolkadotSigner } from "polkadot-api";
-import { getWsProvider } from "polkadot-api/ws-provider";
-import { withPolkadotSdkCompat } from "polkadot-api/polkadot-sdk-compat";
-import { Binary } from "polkadot-api";
-import { bulletin } from "@polkadot-api/descriptors";
-import { useWalletStore } from "./useWalletStore";
+import { getPreimageManager } from "@parity/product-sdk-host";
 import { useUserStoreManager } from "./useUserStoreManager";
 import type { BulletinUploadResult } from "@/type";
 import { verifyCidWithGateways, type CidVerificationResult } from "@/lib/ipfs";
 import {
-  BULLETIN_RPC,
   CHUNK_SIZE,
-  CODEC_DAG_PB,
   CODEC_RAW,
   MAX_BROWSER_UPLOAD_SIZE,
   MAX_TX_SIZE,
@@ -29,7 +22,6 @@ import type {
 } from "@/lib/bulletinUploadWorkerProtocol";
 import { BulletinUploadWorkerClient } from "@/lib/bulletinUploadWorker";
 
-const STORE_TIMEOUT_MS = 120_000;
 const UPLOAD_GLOBAL_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [200, 400, 800] as const;
@@ -47,17 +39,6 @@ type UploadStage =
   | "caching"
   | "done"
   | "error";
-
-function formatDispatchError(dispatchError: { type: string; value?: unknown }): string {
-  if (dispatchError.type === "Module") {
-    const moduleError = dispatchError.value as {
-      type: string;
-      value?: { type: string };
-    };
-    return `Module error: ${moduleError.type}.${moduleError.value?.type || "Unknown"}`;
-  }
-  return dispatchError.type;
-}
 
 function formatTransactionError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -172,26 +153,6 @@ function getPendingUploadInfo(): PendingUploadInfo | null {
     completedChunks: state.completedChunks.length,
     totalChunks: state.totalChunks,
   };
-}
-
-let sharedBulletinClient: PolkadotClient | null = null;
-
-function getBulletinClient(): PolkadotClient {
-  if (!sharedBulletinClient) {
-    sharedBulletinClient = createClient(withPolkadotSdkCompat(getWsProvider(BULLETIN_RPC)));
-  }
-  return sharedBulletinClient;
-}
-
-function destroyBulletinClient(): void {
-  if (sharedBulletinClient) {
-    try {
-      sharedBulletinClient.destroy();
-    } catch (error) {
-      console.warn("[BulletinStore] Client destroy failed:", error);
-    }
-    sharedBulletinClient = null;
-  }
 }
 
 export const useBulletinStore = defineStore("useBulletinStore", () => {
@@ -329,100 +290,23 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
     return RETRYABLE_ERROR_MARKERS.some((marker) => msg.includes(marker));
   }
 
-  function storeContent(
-    typedApi: ReturnType<PolkadotClient["getTypedApi"]>,
-    signer: PolkadotSigner,
-    contentBytes: Uint8Array,
-    codec: number,
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      let subscription: { unsubscribe: () => void } | undefined;
-      let transactionReference: any = null;
-
-      const timeout = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        try {
-          subscription?.unsubscribe();
-        } catch (error) {
-          console.warn("[BulletinStore] Subscription cleanup failed:", error);
-        }
-        subscription = undefined;
-        transactionReference = null;
-        reject(new Error("store-timeout"));
-      }, STORE_TIMEOUT_MS);
-
-      function finish(error?: Error): void {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        try {
-          subscription?.unsubscribe();
-        } catch (error) {
-          console.warn("[BulletinStore] Subscription cleanup failed:", error);
-        }
-        subscription = undefined;
-        transactionReference = null;
-        useWalletStore().setTransactionStatus("idle");
-        if (error) reject(error);
-        else resolve();
-      }
-
-      transactionReference = (typedApi as any).tx.TransactionStorage.store_with_cid_config({
-        cid: {
-          codec: BigInt(codec),
-          hashing: { type: "Sha2_256", value: undefined },
-        },
-        data: Binary.fromBytes(contentBytes),
-      });
-
-      const walletStore = useWalletStore();
-
-      try {
-        subscription = transactionReference.signSubmitAndWatch(signer).subscribe({
-          next: (event: any) => {
-            if (settled) return;
-            switch (event.type) {
-              case "signed":
-                walletStore.setTransactionStatus("signing");
-                break;
-              case "broadcasted":
-                walletStore.setTransactionStatus("broadcasting");
-                break;
-              case "txBestBlocksState":
-                if (event.found) {
-                  walletStore.setTransactionStatus("included");
-                  if (event.ok) {
-                    walletStore.setTransactionStatus("finalized");
-                    finish();
-                  } else {
-                    const msg = event.dispatchError
-                      ? formatDispatchError(event.dispatchError)
-                      : "Transaction failed";
-                    finish(new Error(msg));
-                  }
-                }
-                break;
-            }
-          },
-          error: (err: unknown) => finish(ensureError(err)),
-        });
-      } catch (err) {
-        finish(ensureError(err));
-      }
-    });
+  // Bulletin writes go through the host preimage manager: the host builds,
+  // signs, and submits the TransactionStorage extrinsic with its own authorized
+  // account (provisioned from BulletinAllowance on first use). The papp never
+  // signs — the product account holds no storage authorization. The host drives
+  // the PreimageSubmit + store-data prompts itself on first submit per session.
+  async function storeContent(contentBytes: Uint8Array): Promise<void> {
+    const manager = await getPreimageManager();
+    if (!manager) {
+      throw new Error("Host storage unavailable — open dotNS inside a Polkadot host.");
+    }
+    await manager.submit(contentBytes);
   }
 
-  async function storeWithRetries(
-    typedApi: ReturnType<PolkadotClient["getTypedApi"]>,
-    signer: PolkadotSigner,
-    contentBytes: Uint8Array,
-    codec: number,
-  ): Promise<void> {
+  async function storeWithRetries(contentBytes: Uint8Array): Promise<void> {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        await storeContent(typedApi, signer, contentBytes, codec);
+        await storeContent(contentBytes);
         return;
       } catch (err) {
         if (!isRetryableError(err) || attempt === MAX_RETRIES) throw err;
@@ -446,14 +330,11 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
   }
 
   async function storePreparedBytes(
-    typedApi: ReturnType<PolkadotClient["getTypedApi"]>,
-    signer: PolkadotSigner,
     prepareStage: UploadStage,
-    signStage: UploadStage,
+    storeStage: UploadStage,
     prepareMessage: string,
-    signMessage: string,
+    storeMessage: string,
     progress: number,
-    codec: number,
     prepare: () => Promise<PreparedChunk>,
   ): Promise<StorePreparedResult> {
     setStage(prepareStage, prepareMessage, progress);
@@ -468,8 +349,8 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
       throw new Error("Prepared upload bytes are not available.");
     }
 
-    setStage(signStage, signMessage, progress);
-    await storeWithRetries(typedApi, signer, bytes, codec);
+    setStage(storeStage, storeMessage, progress);
+    await storeWithRetries(bytes);
     bytes = null;
 
     await yieldToBrowser();
@@ -518,23 +399,18 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
       "Upload timed out after 5 minutes. Completed chunks are saved — try again to resume.",
       Boolean(options.cacheToStore),
       async () => {
-        const walletStore = useWalletStore();
-
         if (!isBrowserUploadSizeAllowed(file.size)) {
           throw new Error(
             `Browser uploads are limited to ${formatBytes(MAX_BROWSER_UPLOAD_SIZE)}. Use the CLI for larger files or directories.`,
           );
         }
 
-        walletStore.ensureConnected();
-        const signer = walletStore.getInjected();
-
-        setStage("preparing", "Connecting to Bulletin chain...", 2);
-        const bulletinClient = getBulletinClient();
-        const typedApi = bulletinClient.getTypedApi(bulletin);
+        setStage("preparing", "Preparing upload...", 2);
 
         const result = await withUploadWorker((uploadWorker) =>
-          uploadChunkedFile(file, typedApi, signer, uploadWorker),
+          getUploadApprovalPlan(file.size).needsChunking
+            ? uploadChunkedFile(file, uploadWorker)
+            : uploadSingleBlock(file, uploadWorker),
         );
 
         await verifyAndCacheUpload(result.cid, options);
@@ -545,10 +421,27 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
     );
   }
 
+  async function uploadSingleBlock(
+    file: File,
+    uploadWorker: BulletinUploadWorkerClient,
+  ): Promise<BulletinUploadResult> {
+    chunksTotal.value = 1;
+    chunksCompleted.value = 0;
+    const prepared = await storePreparedBytes(
+      "preparing",
+      "signing",
+      `Preparing ${formatBytes(file.size)} for upload...`,
+      "Storing on the Bulletin chain via the host...",
+      90,
+      () => uploadWorker.prepareSlice(file, 0, file.size, CODEC_RAW),
+    );
+    chunksCompleted.value = 1;
+    uploadedCid.value = prepared.cid;
+    return { cid: prepared.cid };
+  }
+
   async function uploadChunkedFile(
     file: File,
-    typedApi: ReturnType<PolkadotClient["getTypedApi"]>,
-    signer: PolkadotSigner,
     uploadWorker: BulletinUploadWorkerClient,
   ): Promise<BulletinUploadResult> {
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -583,14 +476,11 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
       const end = Math.min(start + CHUNK_SIZE, file.size);
       const chunkProgress = 5 + ((chunksCompleted.value + 1) / totalChunks) * 80;
       const preparedChunk = await storePreparedBytes(
-        typedApi,
-        signer,
         "chunking",
         "chunking",
         `Preparing chunk ${chunksCompleted.value + 1}/${totalChunks} in the background`,
-        `Approve chunk ${chunksCompleted.value + 1}/${totalChunks} in your wallet`,
+        `Storing chunk ${chunksCompleted.value + 1}/${totalChunks} via the host...`,
         chunkProgress,
-        CODEC_RAW,
         () => uploadWorker.prepareSlice(file, start, end, CODEC_RAW),
       );
 
@@ -605,14 +495,11 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
     completedChunks.sort((a, b) => a.index - b.index);
 
     const preparedRoot = await storePreparedBytes(
-      typedApi,
-      signer,
       "building-root",
       "building-root",
       "Building DAG-PB root in the background...",
-      "Approve root node in your wallet",
+      "Storing the root node via the host...",
       95,
-      CODEC_DAG_PB,
       () => uploadWorker.prepareRoot(completedChunks),
     );
 
@@ -622,7 +509,6 @@ export const useBulletinStore = defineStore("useBulletinStore", () => {
   }
 
   function cleanup(): void {
-    destroyBulletinClient();
     isUploading.value = false;
     window.onbeforeunload = null;
   }

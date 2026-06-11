@@ -1,114 +1,47 @@
 import { defineStore } from "pinia";
-import {
-  encodeFunctionData,
-  decodeFunctionResult,
-  namehash,
-  type Hash,
-  type Address,
-  zeroAddress,
-  zeroHash,
-} from "viem";
+import { namehash, type Hash, type Address, zeroAddress, zeroHash } from "viem";
 import { CID } from "multiformats/cid";
-import { useNetworkStore } from "./useNetworkStore";
-import { useTransactionStore } from "./useTransactionStore";
-import { useAbiStore } from "./useAbiStore";
+import { getContract, safeRead, WRITE_TX_DEFAULTS } from "@/composables/useContracts";
+import { getChainClient } from "@/composables/useTypedAPI";
 import { useWalletStore } from "./useWalletStore";
+import { batchSubmitAndWatch, type BatchApi } from "@parity/product-sdk-tx";
+import { useContractWrite } from "@/lib/contractWrite";
 import { computeDomainTokenId, normalizeDomainName, ZERO_SUBSTRATE_ADDRESS } from "../utils";
-import type { TextRecord, TransactionResult, MulticallCall } from "@/type";
+import type { TextRecord, TransactionResult } from "@/type";
 
 export const useResolverStore = defineStore("useResolverStore", () => {
-  const networkStore = useNetworkStore();
-  const transactionStore = useTransactionStore();
-  const abiStore = useAbiStore();
   const walletStore = useWalletStore();
+  const { txOptions, batchOptions, withWrite, submitWrite } = useContractWrite();
 
   async function getText(domain: string, key: string): Promise<string | null> {
-    try {
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsContentResolver) throw new Error("Content resolver not configured");
-
+    return safeRead("[ResolverStore:getText]", null, async () => {
+      const resolver = await getContract("@dotns/content-resolver");
       const node = namehash(`${normalizeDomainName(domain)}.dot`);
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsContentResolver"),
-        functionName: "text",
-        args: [node, key],
-      });
-
-      const client = await networkStore.getClient();
-      const origin = walletStore.substrateAddress || ZERO_SUBSTRATE_ADDRESS;
-      const result = await transactionStore.ethCall(
-        client,
-        origin,
-        network.dotnsContentResolver,
-        callData,
-      );
-
-      if (!result || result === "0x") return null;
-
-      const decoded = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsContentResolver"),
-        functionName: "text",
-        data: result,
-      }) as any;
-
+      const result = await resolver.text!.query(node, key, { origin: ZERO_SUBSTRATE_ADDRESS });
+      if (!result.success) return null;
+      const decoded = result.value as string;
+      // Legacy filter: the content resolver can echo back the literal strings
+      // "true" / "false" as placeholder values for unset records; treat those
+      // the same as the empty string.
       return decoded && decoded !== "" && decoded !== "true" && decoded !== "false"
         ? decoded
         : null;
-    } catch (error) {
-      console.warn("[ResolverStore:getText]", error);
-      return null;
-    }
+    });
   }
 
   async function setText(domain: string, key: string, value: string): Promise<Hash> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsContentResolver) throw new Error("Content resolver not configured");
-
-      const client = await networkStore.getClient();
+    return withWrite(async () => {
+      const resolver = await getContract("@dotns/content-resolver");
       const node = namehash(`${normalizeDomainName(domain)}.dot`);
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsContentResolver"),
-        functionName: "setText",
-        args: [node, key, value],
-      });
-
-      return await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        {
-          to: network.dotnsContentResolver,
-          data: callData,
-        },
-      );
-    } catch (error) {
-      console.warn("[ResolverStore:setText]", error);
-      throw error;
-    }
+      return submitWrite(resolver.setText!.tx(node, key, value, txOptions()), "Set record");
+    });
   }
 
   async function setContentHash(domain: string, ipfsCid: string): Promise<TransactionResult> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsContentResolver) throw new Error("Content resolver not configured");
-
-      const client = await networkStore.getClient();
+    return withWrite(async () => {
+      const resolver = await getContract("@dotns/content-resolver");
       const node = namehash(`${normalizeDomainName(domain)}.dot`);
 
-      // Parse and encode IPFS CID
       // EIP-1577 contenthash: 0xe3 (IPFS namespace) + 0x01 (version) + full CIDv1 bytes
       const cid = CID.parse(ipfsCid);
       const hex = Array.from(cid.bytes)
@@ -116,313 +49,96 @@ export const useResolverStore = defineStore("useResolverStore", () => {
         .join("");
       const contentHash: `0x${string}` = `0xe301${hex}`;
 
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsContentResolver"),
-        functionName: "setContenthash",
-        args: [node, contentHash],
-      });
-
-      const hash = await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        {
-          to: network.dotnsContentResolver,
-          data: callData,
-        },
+      const hash = await submitWrite(
+        resolver.setContenthash!.tx(node, contentHash, txOptions()),
+        "Set content hash",
       );
-
-      return hash && hash !== zeroHash ? { hash, status: true } : { hash: zeroHash, status: false };
-    } catch (error) {
-      console.warn("[ResolverStore:setContentHash]", error);
-      throw error;
-    }
+      return { hash, status: true };
+    });
   }
 
+  // Multi-record profile updates with one signing prompt: each record is
+  // prepared as a Revive.call (`setText`) via `.prepare()`, then submitted
+  // together in a single `Utility.batch_all` extrinsic the account signs once.
+  // The calls are the user's own and batch natively, so no MultiCall3/approval
+  // ceremony is needed for writes (MultiCall3 is used only for read aggregation).
   async function setProfileRecordsMulticall(
     domain: string,
     records: TextRecord[],
   ): Promise<TransactionResult> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsContentResolver || !network?.multiCall) {
-        throw new Error("Resolver or multicall not configured");
-      }
-
-      const client = await networkStore.getClient();
+    const validRecords = records.filter((r) => r.value && r.value.length > 0);
+    if (validRecords.length === 0) return { status: false, hash: zeroHash };
+    return withWrite(async () => {
+      const resolver = await getContract("@dotns/content-resolver");
       const node = namehash(`${normalizeDomainName(domain)}.dot`);
-
-      // Filter out empty records
-      const validRecords = records.filter((r) => r.value && r.value.length > 0);
-      if (validRecords.length === 0) return { status: false, hash: zeroHash };
-
-      // Check if multicall is already approved
-      const approvalData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsContentResolver"),
-        functionName: "isApprovedForAll",
-        args: [walletStore.evmAddress as Address, network.multiCall],
-      });
-
-      const approvedRaw = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress!,
-        network.dotnsContentResolver,
-        approvalData,
+      const calls = await Promise.all(
+        validRecords.map((record) =>
+          resolver.setText!.prepare(node, record.key, record.value, {
+            storageDepositLimit: WRITE_TX_DEFAULTS.storageDepositLimit,
+          }),
+        ),
       );
-
-      const approved = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsContentResolver"),
-        functionName: "isApprovedForAll",
-        data: approvedRaw,
-      }) as boolean;
-
-      if (!approved) {
-        const setApprovalData = encodeFunctionData({
-          abi: abiStore.getABI("DotnsContentResolver"),
-          functionName: "setApprovalForAll",
-          args: [network.multiCall, true],
-        });
-
-        await transactionStore.ethTransact(
-          client,
-          walletStore.getInjected(),
-          walletStore.substrateAddress!,
-          { to: network.dotnsContentResolver, data: setApprovalData },
-        );
-      }
-
-      // Prepare multicall batch
-      const calls: MulticallCall[] = validRecords.map((record) => ({
-        target: network.dotnsContentResolver!,
-        callData: encodeFunctionData({
-          abi: abiStore.getABI("DotnsContentResolver"),
-          functionName: "setText",
-          args: [node, record.key, record.value],
-        }),
-      }));
-
-      const multicallData = encodeFunctionData({
-        abi: abiStore.getABI("MultiCall"),
-        functionName: "aggregate",
-        args: [calls],
-      });
-
-      // Execute multicall
-      const multicallTx = await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        { to: network.multiCall, data: multicallData },
+      const chain = await getChainClient();
+      const signer = walletStore.getInjected();
+      const hash = await submitWrite(
+        batchSubmitAndWatch(calls, chain.assetHub as unknown as BatchApi, signer, batchOptions()),
+        "Profile update",
       );
-
-      // Revoke approval for security
-      if (!approved) {
-        const revokeApprovalData = encodeFunctionData({
-          abi: abiStore.getABI("DotnsContentResolver"),
-          functionName: "setApprovalForAll",
-          args: [network.multiCall, false],
-        });
-
-        await transactionStore.ethTransact(
-          client,
-          walletStore.getInjected(),
-          walletStore.substrateAddress!,
-          { to: network.dotnsContentResolver, data: revokeApprovalData },
-        );
-      }
-
-      return multicallTx && multicallTx !== zeroHash
-        ? { hash: multicallTx, status: true }
-        : { status: false, hash: zeroHash };
-    } catch (error) {
-      console.warn("[ResolverStore:setProfileRecordsMulticall]", error);
-      return { status: false, hash: zeroHash };
-    }
+      return { hash, status: true };
+    });
   }
 
   async function resolveNameToAddress(username: string): Promise<Address | null> {
-    try {
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsResolver) {
-        throw new Error("DotnsResolver not configured");
-      }
-
+    return safeRead("[ResolverStore:resolveNameToAddress]", null, async () => {
+      const resolver = await getContract("@dotns/resolver");
       const node = namehash(`${normalizeDomainName(username)}.dot`);
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsResolver"),
-        functionName: "addressOf",
-        args: [node],
-      });
-
-      const client = await networkStore.getClient();
-      const origin = walletStore.substrateAddress || ZERO_SUBSTRATE_ADDRESS;
-      const result = await transactionStore.ethCall(
-        client,
-        origin,
-        network.dotnsResolver as Address,
-        callData,
-      );
-
-      if (!result || result === "0x") return null;
-
-      const resolved = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsResolver"),
-        functionName: "addressOf",
-        data: result,
-      }) as Address;
-
-      return resolved === zeroAddress ? null : resolved;
-    } catch (error) {
-      console.warn("[ResolverStore:resolveNameToAddress]", error);
-      return null;
-    }
+      const result = await resolver.addressOf!.query(node, { origin: ZERO_SUBSTRATE_ADDRESS });
+      if (!result.success) return null;
+      const resolved = result.value as Address;
+      return !resolved || resolved === zeroAddress ? null : resolved;
+    });
   }
 
   async function getOwnerOfDomain(domain: string): Promise<Address | null> {
-    try {
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrar) throw new Error("DotnsRegistrar contract not configured");
-
+    return safeRead("[ResolverStore:getOwnerOfDomain]", null, async () => {
+      const registrar = await getContract("@dotns/registrar");
       const tokenId = computeDomainTokenId(normalizeDomainName(domain));
-
-      const availableData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "available",
-        args: [tokenId],
+      const availableResult = await registrar.available!.query(tokenId, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
+      if (!availableResult.success) return null;
+      if (availableResult.value === true) return null;
 
-      const client = await networkStore.getClient();
-      const origin = walletStore.substrateAddress || ZERO_SUBSTRATE_ADDRESS;
-      const availableRaw = await transactionStore.ethCall(
-        client,
-        origin,
-        network.dotnsRegistrar as Address,
-        availableData,
-      );
-
-      if (!availableRaw || availableRaw === "0x") return null;
-
-      const isAvailable = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "available",
-        data: availableRaw,
-      }) as boolean;
-
-      if (isAvailable) return null;
-
-      const ownerOfData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "ownerOf",
-        args: [tokenId],
+      const ownerResult = await registrar.ownerOf!.query(tokenId, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
-
-      const ownerRaw = await transactionStore.ethCall(
-        client,
-        origin,
-        network.dotnsRegistrar as Address,
-        ownerOfData,
-      );
-
-      if (!ownerRaw || ownerRaw === "0x") return null;
-
-      const owner = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "ownerOf",
-        data: ownerRaw,
-      }) as Address;
-
-      return owner === zeroAddress ? null : owner;
-    } catch (error) {
-      console.warn("[ResolverStore:getOwnerOfDomain]", error);
-      return null;
-    }
+      if (!ownerResult.success) return null;
+      const owner = ownerResult.value as Address;
+      return !owner || owner === zeroAddress ? null : owner;
+    });
   }
 
   async function getOwnerOfSubname(fullName: string): Promise<Address | null> {
-    try {
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistry) throw new Error("DotnsRegistry not configured");
-
+    return safeRead("[ResolverStore:getOwnerOfSubname]", null, async () => {
+      const registry = await getContract("@dotns/registry");
       const node = namehash(fullName.endsWith(".dot") ? fullName : `${fullName}.dot`);
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistry"),
-        functionName: "owner",
-        args: [node],
-      });
-
-      const client = await networkStore.getClient();
-      const origin = walletStore.substrateAddress || ZERO_SUBSTRATE_ADDRESS;
-      const result = await transactionStore.ethCall(
-        client,
-        origin,
-        network.dotnsRegistry as Address,
-        callData,
-      );
-
-      if (!result || result === "0x") return null;
-
-      const owner = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsRegistry"),
-        functionName: "owner",
-        data: result,
-      }) as Address;
-
-      return owner === zeroAddress ? null : owner;
-    } catch (error) {
-      console.warn("[ResolverStore:getOwnerOfSubname]", error);
-      return null;
-    }
+      const result = await registry.owner!.query(node, { origin: ZERO_SUBSTRATE_ADDRESS });
+      if (!result.success) return null;
+      const owner = result.value as Address;
+      return !owner || owner === zeroAddress ? null : owner;
+    });
   }
 
   async function resolveAddressToName(targetAddress: Address): Promise<string | null> {
-    try {
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsReverseResolver) {
-        throw new Error("DotnsReverseResolver not configured");
-      }
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsReverseResolver"),
-        functionName: "nameOf",
-        args: [targetAddress],
+    return safeRead("[ResolverStore:resolveAddressToName]", null, async () => {
+      const reverse = await getContract("@dotns/reverse-resolver");
+      const result = await reverse.nameOf!.query(targetAddress, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
-
-      const client = await networkStore.getClient();
-      const origin = walletStore.substrateAddress || ZERO_SUBSTRATE_ADDRESS;
-      const result = await transactionStore.ethCall(
-        client,
-        origin,
-        network.dotnsReverseResolver as Address,
-        callData,
-      );
-
-      if (!result || result === "0x") return null;
-
-      const name = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsReverseResolver"),
-        functionName: "nameOf",
-        data: result,
-      }) as string;
-
+      if (!result.success) return null;
+      const name = result.value as string;
       return name && name !== "" ? name : null;
-    } catch (error) {
-      console.warn("[ResolverStore:resolveAddressToName]", error);
-      return null;
-    }
+    });
   }
 
   return {

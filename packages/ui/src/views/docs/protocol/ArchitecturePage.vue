@@ -4,18 +4,17 @@
       <p class="text-sm font-medium text-dot-accent mb-2">Protocol</p>
       <h1 class="text-4xl font-serif text-dot-text-primary mb-4">Architecture</h1>
       <p class="text-lg text-dot-text-secondary leading-relaxed">
-        DotNS is composed of
+        DotNS is built from
         <span class="text-dot-text-primary font-medium">8 smart contracts</span>
-        deployed on Paseo AssetHub. Each contract has a single responsibility, and together they
-        form a modular naming system with registration, resolution, content management, and
-        proof-of-personhood pricing.
+        deployed on Paseo AssetHub. Each one has a single responsibility, and together they cover
+        registration, resolution, content management, and proof-of-personhood pricing.
       </p>
     </div>
 
     <div class="space-y-4">
       <h2 class="text-xl font-semibold text-dot-text-primary">Deployed Contracts</h2>
       <p class="text-dot-text-secondary text-sm">
-        All contracts are deployed on the Paseo AssetHub testnet. Addresses are shown below.
+        Each contract is live on the Paseo AssetHub testnet at the address shown below.
       </p>
       <div class="space-y-3">
         <div
@@ -37,16 +36,9 @@
     <div class="space-y-4">
       <h2 class="text-xl font-semibold text-dot-text-primary">Contract Relationships</h2>
       <p class="text-dot-text-secondary text-sm leading-relaxed">
-        The diagram below shows how the contracts interact during registration and resolution. The
-        Controller coordinates each step, while the Registry holds the definitive record of who owns
-        each name.
+        During registration and resolution the Controller coordinates each step, while the Registry
+        holds the definitive record of who owns each name.
       </p>
-
-      <DocDiagramImage
-        src="/diagrams/system.png"
-        alt="DotNS system diagram showing client interfaces, smart contracts, external systems, proxy, and blockchain layers"
-        caption="DotNS System Diagram"
-      />
     </div>
 
     <div class="space-y-4">
@@ -106,50 +98,49 @@
 
 <script setup lang="ts">
 import DocCallout from "@/components/docs/DocCallout.vue";
-import DocDiagramImage from "@/components/docs/DocDiagramImage.vue";
 
 const contracts = [
   {
     name: "DotnsRegistry",
     description: "Central record of who owns each name and which resolver handles it.",
-    address: "0x4Da0d37aBe96C06ab19963F31ca2DC0412057a6f",
+    address: "0xa1b2b939E82b2ecE55Bd8a0E283818BfC1CA6CDc",
   },
   {
     name: "DotnsRegistrar",
     description: "ERC721 NFT contract that represents permanent .dot name ownership.",
-    address: "0x329aAA5b6bEa94E750b2dacBa74Bf41291E6c2BD",
+    address: "0xf7Ad3F44F316C73E4a2b46b1ed48d376bCc9E639",
   },
   {
     name: "DotnsRegistrarController",
     description:
       "Coordinates the commit-reveal registration flow, including pricing and proof-of-personhood checks.",
-    address: "0xd09e0F1c1E6CE8Cf40df929ef4FC778629573651",
+    address: "0x674b705268DAE369F0a7BE9cbaCDb928b8BA38C2",
   },
   {
     name: "DotnsResolver",
     description: "Converts a .dot name into an on-chain address (forward resolution).",
-    address: "0x95645C7fD0fF38790647FE13F87Eb11c1DCc8514",
+    address: "0xA8988eA083174ea94Ed1D686f0F073a10f65598D",
   },
   {
     name: "DotnsReverseResolver",
     description: "Converts an address back to its primary .dot name (reverse resolution).",
-    address: "0x95D57363B491CF743970c640fe419541386ac8BF",
+    address: "0x259B9D8199c29d2EF132264ad05f8F74F3115A2E",
   },
   {
     name: "DotnsContentResolver",
     description: "Stores profile text records (Twitter, GitHub, etc.) and IPFS content hashes.",
-    address: "0x7756DF72CBc7f062e7403cD59e45fBc78bed1cD7",
+    address: "0x8A26480b0B5Df3d4D9b95adc24a5Ecb33A5b8F64",
   },
   {
     name: "PopRules",
     description: "Classifies names by length and sets pricing based on proof-of-personhood status.",
-    address: "0x4e8920B1E69d0cEA9b23CBFC87A17Ee6fE02d2d3",
+    address: "0x4909bFb3f4Fd86244abD6430fDfA0Ce5C91aD0c4",
   },
   {
     name: "StoreFactory",
     description:
-      "Deploys a personal key-value Store contract for each user to hold their registration records on-chain.",
-    address: "0x030296782F4d3046B080BcB017f01837561D9702",
+      "Deploys per-user stores: a protocol-managed LabelStore for the registration ledger and a user-claimed UserStore for arbitrary records.",
+    address: "0x692047C1477a017F287488E1c85F96Ca28C23fD8",
   },
 ];
 
@@ -157,7 +148,7 @@ const flowSteps = [
   {
     title: "Controller consults PopRules",
     description:
-      "The Controller calls PopRules to classify the name and calculate the registration price based on the user's proof-of-personhood status and name length.",
+      "The Controller calls PopRules to classify the name and determine the registration price from the user's proof-of-personhood tier.",
   },
   {
     title: "Controller calls Registrar to mint NFT",
@@ -170,9 +161,9 @@ const flowSteps = [
       "The Registrar writes the owner and resolver addresses into the Registry for the newly registered name.",
   },
   {
-    title: "Controller writes to Store",
+    title: "Label written to the LabelStore",
     description:
-      "The Controller writes a permanent registration record to the user's personal Store contract through StoreFactory.",
+      "The owner's protocol-managed LabelStore records the registered label as a permanent, locked entry, building the address's lifetime-of-ownership ledger.",
   },
   {
     title: "Resolvers become queryable",

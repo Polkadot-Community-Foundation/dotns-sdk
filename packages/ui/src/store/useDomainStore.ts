@@ -1,25 +1,21 @@
 import { defineStore } from "pinia";
+import { zeroHash, type Address, type Hash, zeroAddress } from "viem";
+import { createContract, type AbiEntry } from "@parity/product-sdk-contracts";
 import {
-  encodeFunctionData,
-  decodeFunctionResult,
-  keccak256,
-  toBytes,
-  hexToBigInt,
-  zeroHash,
-  type Address,
-  type Hash,
-  zeroAddress,
-} from "viem";
-import { useNetworkStore } from "./useNetworkStore";
-import { useTransactionStore } from "./useTransactionStore";
-import { useAbiStore } from "./useAbiStore";
-import { useWalletStore } from "./useWalletStore";
+  getContract,
+  getContractManager,
+  safeRead,
+  withContractRecovery,
+} from "@/composables/useContracts";
+import { signerManager, useWalletStore } from "./useWalletStore";
+import { useContractWrite } from "@/lib/contractWrite";
 import {
   computeDomainTokenId,
   computeDotLabelNode,
   computeSubnode,
   convertNativeToWei,
   convertWeiToNative,
+  convertWeiToNativeCeil,
   formatNativeBalance,
   formatWeiAsEther,
   normalizeDomainName,
@@ -34,10 +30,17 @@ import {
   type PriceWithMeta,
 } from "@/type";
 
+// PERSONHOOD precompile: lives at a well-known precompile address, not a
+// deployable contract, so it is absent from cdm.json. The ABI is small enough to
+// keep inline; resolved at call time via createContract(runtime, address, ABI).
 const PERSONHOOD_PRECOMPILE_ADDRESS = "0x000000000000000000000000000000000a010000" as const;
 const PERSONHOOD_CONTEXT =
   "0x646f746e73000000000000000000000000000000000000000000000000000000" as const;
-const PERSONHOOD_ABI = [
+// Returned by classifyName when the on-chain classifier rejects or cannot reach
+// the name (e.g. a non-canonical label). Callers must treat this as not registerable.
+export const UNCLASSIFIABLE_MESSAGE = "Unable to classify name";
+
+const PERSONHOOD_ABI: AbiEntry[] = [
   {
     type: "function",
     name: "personhoodStatus",
@@ -57,67 +60,20 @@ const PERSONHOOD_ABI = [
     ],
     stateMutability: "view",
   },
-  {
-    type: "function",
-    name: "personhoodInfoByProof",
-    inputs: [
-      {
-        name: "request",
-        type: "tuple",
-        components: [
-          { name: "expectedStatus", type: "uint8" },
-          { name: "proof", type: "bytes" },
-          { name: "expectedAlias", type: "bytes32" },
-          { name: "ringIndex", type: "uint32" },
-          { name: "context", type: "bytes32" },
-          { name: "revision", type: "uint32" },
-          { name: "message", type: "bytes" },
-        ],
-      },
-    ],
-    outputs: [{ name: "ok", type: "bool" }],
-    stateMutability: "view",
-  },
-] as const;
+];
 
 export const useDomainStore = defineStore("useDomainStore", () => {
-  const networkStore = useNetworkStore();
-  const transactionStore = useTransactionStore();
-  const abiStore = useAbiStore();
   const walletStore = useWalletStore();
-
-  function extractLabel(domain: string): string {
-    try {
-      return domain.replace(".dot", "").split(".")[0] ?? "";
-    } catch (error) {
-      console.warn("[DomainStore:extractLabel]", error);
-      throw new Error("Failed to extract label from domain");
-    }
-  }
-
-  function calculateTokenId(label: string): bigint {
-    try {
-      if (!label || typeof label !== "string") throw new Error("Invalid label");
-      return hexToBigInt(keccak256(toBytes(label)));
-    } catch (error) {
-      console.warn("[DomainStore:calculateTokenId]", error);
-      throw new Error("Failed to calculate token ID");
-    }
-  }
+  const { withWrite, submitWrite, txOptions } = useContractWrite();
 
   async function makeCommitment(
     name: string,
     ownerEvm: Address,
     reserved: boolean,
   ): Promise<Commitment> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
+    return withContractRecovery(async () => {
       walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrarController)
-        throw new Error("Registrar controller not configured");
+      const controller = await getContract("@dotns/registrar-controller");
 
       name = normalizeDomainName(name);
 
@@ -133,500 +89,234 @@ export const useDomainStore = defineStore("useDomainStore", () => {
         reserved,
       };
 
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrarController"),
-        functionName: "makeCommitment",
-        args: [registration],
+      const result = await controller.makeCommitment!.query(registration, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
-
-      const client = await networkStore.getClient();
-
-      const resultData = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress!,
-        network.dotnsRegistrarController,
-        data,
-      );
-
-      const commitment = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsRegistrarController"),
-        functionName: "makeCommitment",
-        data: resultData,
-      }) as Hash;
-
-      if (!commitment || commitment === zeroHash)
+      if (!result.success) throw new Error("Failed to compute commitment");
+      const commitment = result.value as Hash;
+      if (!commitment || commitment === zeroHash) {
         throw new Error("Invalid commitment hash generated");
-
+      }
       return { commitment, registration };
-    } catch (error) {
+    }).catch((error) => {
       console.warn("[DomainStore:makeCommitment]", error);
       throw new Error(error instanceof Error ? error.message : "Failed to create commitment");
-    }
+    });
   }
 
   async function commitRegistration(commitment: string): Promise<Hash> {
-    try {
-      if (!commitment || typeof commitment !== "string" || !commitment.startsWith("0x")) {
-        throw new Error("Invalid commitment hash");
-      }
-
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrarController)
-        throw new Error("Registrar controller not configured");
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrarController"),
-        functionName: "commit",
-        args: [commitment],
-      });
-
-      const client = await networkStore.getClient();
-
-      const hash = await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        {
-          to: network.dotnsRegistrarController,
-          data,
-        },
-      );
-
-      if (!hash || hash === zeroHash) throw new Error("Transaction failed to submit");
-      return hash;
-    } catch (error) {
-      console.warn("[DomainStore:commitRegistration]", error);
-      throw new Error(error instanceof Error ? error.message : "Failed to commit registration");
+    if (!commitment || typeof commitment !== "string" || !commitment.startsWith("0x")) {
+      throw new Error("Invalid commitment hash");
     }
+    return withWrite(async () => {
+      const controller = await getContract("@dotns/registrar-controller");
+      return submitWrite(controller.commit!.tx(commitment as Hash, txOptions()), "Commit");
+    });
   }
 
   async function registerDomain(registration: Registration): Promise<TransactionResult> {
-    try {
-      if (!registration || !registration.label || !registration.owner) {
-        throw new Error("Invalid registration data");
-      }
-
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrarController)
-        throw new Error("Registrar controller not configured");
+    if (!registration?.label || !registration?.owner) {
+      throw new Error("Invalid registration data");
+    }
+    return withWrite(async () => {
+      const controller = await getContract("@dotns/registrar-controller");
       const price = await priceWithoutCheck(registration.label);
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrarController"),
-        functionName: "register",
-        args: [registration],
-      });
-
       const bufferedPaymentWei = (price.price * 110n) / 100n;
-
       const bufferedPaymentNative = convertWeiToNative(bufferedPaymentWei);
 
-      const client = await networkStore.getClient();
-
-      const hash = await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        {
-          to: network.dotnsRegistrarController,
-          data,
-          value: bufferedPaymentNative,
-        },
+      const hash = await submitWrite(
+        controller.register!.tx(registration, txOptions({ value: bufferedPaymentNative })),
+        "Registration",
       );
-
-      if (!hash || hash === zeroHash) throw new Error("Registration transaction failed");
       return { hash, status: true };
-    } catch (error) {
-      console.warn("[DomainStore:registerDomain]", error);
-      throw new Error(error instanceof Error ? error.message : "Failed to register domain");
-    }
+    });
   }
 
   async function registerReserved(registration: Registration): Promise<TransactionResult> {
-    try {
-      if (!registration || !registration.label || !registration.owner) {
-        throw new Error("Invalid registration data");
-      }
-
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrarController)
-        throw new Error("Registrar controller not configured");
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrarController"),
-        functionName: "registerReserved",
-        args: [registration],
-      });
-
-      const client = await networkStore.getClient();
-
-      const hash = await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        {
-          to: network.dotnsRegistrarController,
-          data,
-        },
+    if (!registration?.label || !registration?.owner) {
+      throw new Error("Invalid registration data");
+    }
+    return withWrite(async () => {
+      const controller = await getContract("@dotns/registrar-controller");
+      const hash = await submitWrite(
+        controller.registerReserved!.tx(registration, txOptions()),
+        "Reserved registration",
       );
-
-      if (!hash || hash === zeroHash) throw new Error("Reserved registration transaction failed");
       return { hash, status: true };
-    } catch (error) {
-      console.warn("[DomainStore:registerReserved]", error);
-      throw new Error(
-        error instanceof Error ? error.message : "Failed to register reserved domain",
-      );
-    }
-  }
-
-  async function isAvailable(domain: string): Promise<boolean> {
-    try {
-      if (!domain || typeof domain !== "string") throw new Error("Invalid domain name");
-
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrar) throw new Error("Registrar not configured");
-
-      const label = extractLabel(domain);
-      const tokenId = calculateTokenId(label);
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "available",
-        args: [tokenId],
-      });
-
-      const client = await networkStore.getClient();
-
-      const result = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress!,
-        network.dotnsRegistrar,
-        data,
-      );
-
-      const decoded = decodeFunctionResult({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "available",
-        data: result,
-      }) as boolean;
-
-      return decoded;
-    } catch (error) {
-      console.warn("[DomainStore:isAvailable]", error);
-      throw new Error("Failed to check domain availability");
-    }
+    });
   }
 
   async function getMinCommitmentAge(): Promise<bigint> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrarController)
-        throw new Error("Registrar controller not configured");
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrarController"),
-        functionName: "minCommitmentAge",
-        args: [],
-      });
-
-      const client = await networkStore.getClient();
-
-      const result = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress!,
-        network.dotnsRegistrarController,
-        data,
-      );
-
-      const minCommitmentAge = decodeFunctionResult({
-        functionName: "minCommitmentAge",
-        abi: abiStore.getABI("DotnsRegistrarController"),
-        data: result,
-      }) as bigint;
-
+    return safeRead("[DomainStore:getMinCommitmentAge]", 60n, async () => {
+      const controller = await getContract("@dotns/registrar-controller");
+      const result = await controller.minCommitmentAge!.query({ origin: ZERO_SUBSTRATE_ADDRESS });
+      if (!result.success) return 60n;
+      const minCommitmentAge = result.value as bigint;
+      // Add 2s buffer; default to 8s if chain returned 0n (matches prior behavior).
       return minCommitmentAge === 0n ? 8n : minCommitmentAge + 2n;
-    } catch (error) {
-      console.warn("[DomainStore:getMinCommitmentAge]", error);
-      return 60n;
-    }
+    });
   }
 
   async function userPopStatus(user: Address): Promise<PopStatus> {
-    try {
-      networkStore.ensureClient();
-      walletStore.ensureWalletConnected();
-
-      const data = encodeFunctionData({
-        abi: PERSONHOOD_ABI,
-        functionName: "personhoodStatus",
-        args: [user, PERSONHOOD_CONTEXT],
-      });
-      const client = await networkStore.getClient();
-
-      const result = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress!,
+    return safeRead("[DomainStore:userPopStatus]", PopStatus.NoStatus, async () => {
+      const m = await getContractManager();
+      const personhood = createContract(
+        m.getRuntime(),
         PERSONHOOD_PRECOMPILE_ADDRESS,
-        data,
+        PERSONHOOD_ABI,
+        { signerManager },
       );
-
-      const info = decodeFunctionResult({
-        abi: PERSONHOOD_ABI,
-        functionName: "personhoodStatus",
-        data: result,
+      const result = await personhood.personhoodStatus!.query(user, PERSONHOOD_CONTEXT, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
-
+      if (!result.success) return PopStatus.NoStatus;
+      const info = result.value as { status: number | bigint };
       return Number(info.status) as PopStatus;
-    } catch (error) {
-      console.warn("[DomainStore:userPopStatus]", error);
-      return PopStatus.NoStatus;
-    }
+    });
   }
 
   async function classifyName(name: string): Promise<NameRequirement> {
-    try {
-      if (!name || typeof name !== "string") throw new Error("Invalid domain name");
-
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.popOracle) throw new Error("PopOracle not configured");
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("PopRules"),
-        functionName: "classifyName",
-        args: [name],
-      });
-
-      const client = await networkStore.getClient();
-
-      const result = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress ?? ZERO_SUBSTRATE_ADDRESS,
-        network.popOracle,
-        data,
-      );
-      const decoded = decodeFunctionResult({
-        abi: abiStore.getABI("PopRules"),
-        functionName: "classifyName",
-        data: result,
-      }) as [PopStatus, string];
-
-      return { requirement: decoded[0], message: decoded[1] };
-    } catch (error) {
-      console.warn("[DomainStore:classifyName]", error);
-      return {
-        requirement: PopStatus.NoStatus,
-        message: "Unable to classify name",
-      };
-    }
+    if (!name || typeof name !== "string") throw new Error("Invalid domain name");
+    const fallback = { requirement: PopStatus.NoStatus, message: UNCLASSIFIABLE_MESSAGE };
+    return safeRead("[DomainStore:classifyName]", fallback, async () => {
+      const popRules = await getContract("@dotns/pop-rules");
+      const result = await popRules.classifyName!.query(name, { origin: ZERO_SUBSTRATE_ADDRESS });
+      if (!result.success) return fallback;
+      // classifyName has two named outputs (requirement, message), so viem
+      // decodes to an object rather than a tuple.
+      const decoded = result.value as { requirement: number | bigint; message: string };
+      return { requirement: Number(decoded.requirement) as PopStatus, message: decoded.message };
+    });
   }
 
   async function priceWithoutCheck(name: string): Promise<PriceWithMeta> {
-    try {
-      if (!name || typeof name !== "string") throw new Error("Invalid domain name");
-
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.popOracle) throw new Error("PopOracle not configured");
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("PopRules"),
-        functionName: "priceWithoutCheck",
-        args: [name, walletStore.evmAddress!],
+    if (!name || typeof name !== "string") throw new Error("Invalid domain name");
+    walletStore.ensureWalletConnected();
+    const fallback: PriceWithMeta = {
+      price: 0n,
+      status: PopStatus.NoStatus,
+      userStatus: walletStore.userPopState ?? PopStatus.NoStatus,
+      message: "Error fetching price",
+    };
+    return safeRead("[DomainStore:priceWithoutCheck]", fallback, async () => {
+      const popRules = await getContract("@dotns/pop-rules");
+      const result = await popRules.priceWithoutCheck!.query(name, walletStore.evmAddress!, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
-
-      const client = await networkStore.getClient();
-
-      const result = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress!,
-        network.popOracle,
-        data,
-      );
-
-      const decoded = decodeFunctionResult({
-        abi: abiStore.getABI("PopRules"),
-        functionName: "priceWithoutCheck",
-        data: result,
-      }) as PriceWithMeta;
-
-      return decoded;
-    } catch (error) {
-      console.warn("[DomainStore:priceWithoutCheck]", error);
-      return {
-        price: 0n,
-        status: PopStatus.NoStatus,
-        userStatus: walletStore.userPopState ?? PopStatus.NoStatus,
-        message: "Error fetching price",
-      };
-    }
+      if (!result.success) return fallback;
+      return result.value as PriceWithMeta;
+    });
   }
 
   async function transferDomain(domain: string, newOwner: Address): Promise<Hash> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistrar) {
-        throw new Error("DotnsRegistrar not configured");
-      }
-
-      if (!newOwner || newOwner === zeroAddress) {
-        throw new Error("Invalid recipient address");
-      }
-
-      const client = await networkStore.getClient();
-      const tokenId = computeDomainTokenId(normalizeDomainName(domain));
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "safeTransferFrom",
-        args: [walletStore.evmAddress as Address, newOwner, tokenId],
-      });
-
-      return await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        {
-          to: network.dotnsRegistrar,
-          data: callData,
-        },
-      );
-    } catch (error) {
-      console.warn("[ResolverStore:transferDomain]", error);
-      throw error;
+    if (!newOwner || newOwner === zeroAddress) {
+      throw new Error("Invalid recipient address");
     }
+    return withWrite(async () => {
+      const registrar = await getContract("@dotns/registrar");
+      const tokenId = computeDomainTokenId(normalizeDomainName(domain));
+      const feeQuote = await registrar.quoteTransferFee!.query(tokenId, newOwner, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
+      });
+      const feeNative = convertWeiToNativeCeil(feeQuote.success ? (feeQuote.value as bigint) : 0n);
+      return submitWrite(
+        registrar.safeTransferFrom!.tx(
+          walletStore.evmAddress as Address,
+          newOwner,
+          tokenId,
+          txOptions({ value: feeNative }),
+        ),
+        "Transfer",
+      );
+    });
   }
+
+  // Lets `delegate` manage and transfer this one name until revoked; the approval
+  // also clears automatically when the name is transferred. Zero address revokes.
+  async function setNameDelegate(domain: string, delegate: Address): Promise<Hash> {
+    return withWrite(async () => {
+      const registrar = await getContract("@dotns/registrar");
+      const tokenId = computeDomainTokenId(normalizeDomainName(domain));
+      return submitWrite(registrar.approve!.tx(delegate, tokenId, txOptions()), "Delegate name");
+    });
+  }
+
+  // The address currently delegated full control of `domain`, or null if none.
+  async function getNameDelegate(domain: string): Promise<Address | null> {
+    return safeRead("[DomainStore:getNameDelegate]", null, async () => {
+      const registrar = await getContract("@dotns/registrar");
+      const tokenId = computeDomainTokenId(normalizeDomainName(domain));
+      const result = await registrar.getApproved!.query(tokenId, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
+      });
+      if (!result.success) return null;
+      const delegate = result.value as Address;
+      return !delegate || delegate === zeroAddress ? null : delegate;
+    });
+  }
+
+  // Lets `operator` edit text and contenthash records across all your names (but
+  // never transfer or change ownership). Set approved=false to revoke.
+  async function setRecordDelegate(operator: Address, approved: boolean): Promise<Hash> {
+    return withWrite(async () => {
+      const resolver = await getContract("@dotns/content-resolver");
+      return submitWrite(
+        resolver.setApprovalForAll!.tx(operator, approved, txOptions()),
+        "Update record delegate",
+      );
+    });
+  }
+
   async function registerSubDomain(
     parentName: string,
     subname: string,
     owner: Address,
   ): Promise<Hash> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistry) throw new Error("DotnsRegistry not configured");
-
-      const client = await networkStore.getClient();
-
+    return withWrite(async () => {
+      const registry = await getContract("@dotns/registry");
       const parentLabel = normalizeDomainName(parentName).trim();
       const parentNode = computeDotLabelNode(parentLabel);
       const subLabel = subname.trim();
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistry"),
-        functionName: "setSubnodeOwner",
-        args: [
-          {
-            parentNode,
-            subLabel,
-            parentLabel,
-            owner,
-          },
-        ],
-      });
-
-      return await transactionStore.ethTransact(
-        client,
-        walletStore.getInjected(),
-        walletStore.substrateAddress!,
-        {
-          to: network.dotnsRegistry,
-          data: callData,
-        },
+      return submitWrite(
+        registry.setSubnodeOwner!.tx({ parentNode, subLabel, parentLabel, owner }, txOptions()),
+        "Subdomain registration",
       );
-    } catch (error) {
-      console.warn("[ResolverStore:registerSubDomain]", error);
-      throw error;
-    }
+    });
   }
 
   async function recordExists(parentName: string, subname: string): Promise<boolean> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.dotnsRegistry) throw new Error("DotnsRegistry not configured");
-
-      const client = await networkStore.getClient();
-
+    return withContractRecovery(async () => {
+      const registry = await getContract("@dotns/registry");
       const parentLabel = normalizeDomainName(parentName).trim();
       const parentNode = computeDotLabelNode(parentLabel);
       const subLabel = subname.trim();
-
       const subnode = computeSubnode(parentNode, subLabel);
-
-      const callData = encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistry"),
-        functionName: "recordExists",
-        args: [subnode],
+      const result = await registry.recordExists!.query(subnode, {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
-
-      const data = await transactionStore.ethCall(
-        client,
-        walletStore.substrateAddress!,
-        network.dotnsRegistry,
-        callData,
-      );
-
-      return decodeFunctionResult({
-        abi: abiStore.getABI("DotnsRegistry"),
-        functionName: "recordExists",
-        data,
-      }) as boolean;
-    } catch (error) {
-      console.warn("[ResolverStore:recordExists]", error);
+      if (!result.success) return false;
+      return Boolean(result.value);
+    }).catch((error) => {
+      console.warn("[DomainStore:recordExists]", error);
       throw error;
-    }
+    });
   }
+
   return {
     makeCommitment,
     commitRegistration,
     registerDomain,
     registerReserved,
-    isAvailable,
     getMinCommitmentAge,
     registerSubDomain,
     priceWithoutCheck,
     userPopStatus,
     classifyName,
     recordExists,
-    extractLabel,
-    calculateTokenId,
     transferDomain,
+    setNameDelegate,
+    getNameDelegate,
+    setRecordDelegate,
     formatNativeBalance,
     formatWeiAsEther,
     convertWeiToNative,

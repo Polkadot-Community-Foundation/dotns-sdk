@@ -1,18 +1,33 @@
+// Ownership verification, via MultiCall3-backed batch reads.
+//
+// Batches DotnsRegistrar.ownerOf / DotnsRegistry.owner across all names in a
+// profile into a single MultiCall3.aggregate3 dry-run (one chain round-trip
+// instead of N). MultiCall3's address is resolved live from the on-chain CDM
+// registry (via ContractManager.fromLiveClient in useContracts) — no hardcoded
+// address, which is what silently broke this path on paseo-next-v2 before.
+//
+// The inner ownerOf/owner calldata is encoded with viem against the registrar/
+// registry ABIs, and each Result.returnData is decoded the same way.
+// `allowFailure: true` means a reverting ownerOf (nonexistent token) comes back
+// as `{ success: false }` rather than bubbling — preserving the per-name default
+// behaviour (2LD miss → not owned; subname miss → owned by default).
+
 import {
-  encodeFunctionData,
   decodeFunctionResult,
-  namehash,
+  encodeFunctionData,
   getAddress,
+  namehash,
   zeroAddress,
   type Address,
+  type Hex,
 } from "viem";
-import { useNetworkStore } from "@/store/useNetworkStore";
-import { useAbiStore } from "@/store/useAbiStore";
-import { useTransactionStore } from "@/store/useTransactionStore";
-import { computeDomainTokenId, normalizeDomainName } from "@/utils";
-import type { Aggregate3Call, Aggregate3Result } from "@/type";
-
-const MULTICALL_CHUNK_SIZE = 20;
+import {
+  getAbi,
+  getContract,
+  getContractManager,
+  withContractRecovery,
+} from "@/composables/useContracts";
+import { computeDomainTokenId, normalizeDomainName, ZERO_SUBSTRATE_ADDRESS } from "@/utils";
 
 function isSubname(value: string): boolean {
   const name = value.endsWith(".dot") ? value.slice(0, -4) : value;
@@ -20,125 +35,97 @@ function isSubname(value: string): boolean {
 }
 
 export function useMulticallOwnership() {
-  const networkStore = useNetworkStore();
-  const abiStore = useAbiStore();
-  const transactionStore = useTransactionStore();
-
-  function encodeOwnerOfCall(value: string): {
-    callData: `0x${string}`;
-    isSubnameCall: boolean;
-  } {
-    if (isSubname(value)) {
-      const fullName = value.endsWith(".dot") ? value : `${value}.dot`;
-      const node = namehash(fullName);
-      return {
-        callData: encodeFunctionData({
-          abi: abiStore.getABI("DotnsRegistry"),
-          functionName: "owner",
-          args: [node],
-        }),
-        isSubnameCall: true,
-      };
-    }
-
-    const label = normalizeDomainName(value);
-    const tokenId = computeDomainTokenId(label);
-    return {
-      callData: encodeFunctionData({
-        abi: abiStore.getABI("DotnsRegistrar"),
-        functionName: "ownerOf",
-        args: [tokenId],
-      }),
-      isSubnameCall: false,
-    };
-  }
-
-  async function multicallOwnerOfChunk(
-    multicallAddress: Address,
-    chunk: Aggregate3Call[],
-    originSs58: string,
-  ): Promise<Aggregate3Result[]> {
-    const callData = encodeFunctionData({
-      abi: abiStore.getABI("MultiCall"),
-      functionName: "aggregate3",
-      args: [chunk],
-    });
-
-    const client = await networkStore.getClient();
-    const raw = await transactionStore.ethCall(client, originSs58, multicallAddress, callData);
-
-    if (!raw || raw === "0x") return [];
-
-    return decodeFunctionResult({
-      abi: abiStore.getABI("MultiCall"),
-      functionName: "aggregate3",
-      data: raw,
-    }) as Aggregate3Result[];
-  }
-
   async function batchVerifyOwnership(
     names: string[],
     ownerAddress: Address,
   ): Promise<Map<string, boolean>> {
-    const network = networkStore.currentNetwork;
-    if (!network?.dotnsRegistrar || !network?.multiCall) return new Map();
+    if (names.length === 0) return new Map();
 
-    await abiStore.ensureAbis();
+    return withContractRecovery(async () => {
+      const checksummedOwner = getAddress(ownerAddress);
+      const manager = await getContractManager();
+      const multicall = await getContract("@dotns/multicall3");
 
-    const client = await networkStore.getClient();
-    const originSs58 = await client.getSubstrateAddress(ownerAddress);
+      const registrarAddress = manager.getAddress("@dotns/registrar") as Address;
+      const registryAddress = manager.getAddress("@dotns/registry") as Address;
+      const registrarAbi = getAbi("@dotns/registrar");
+      const registryAbi = getAbi("@dotns/registry");
 
-    const registrar = network.dotnsRegistrar as Address;
-    const registry = network.dotnsRegistry as Address;
-    const encodedCalls = names.map((value) => encodeOwnerOfCall(value));
-    const calls: Aggregate3Call[] = encodedCalls.map((encoded) => ({
-      target: encoded.isSubnameCall ? registry : registrar,
-      allowFailure: true,
-      callData: encoded.callData,
-    }));
+      // Build one Call3 per name; remember each name's kind so the matching
+      // result can be decoded and defaulted correctly.
+      const plans: { name: string; subname: boolean }[] = [];
+      const calls = names.map((name) => {
+        if (isSubname(name)) {
+          const fullName = name.endsWith(".dot") ? name : `${name}.dot`;
+          plans.push({ name, subname: true });
+          return {
+            target: registryAddress,
+            allowFailure: true,
+            callData: encodeFunctionData({
+              abi: registryAbi,
+              functionName: "owner",
+              args: [namehash(fullName)],
+            }),
+          };
+        }
+        const tokenId = computeDomainTokenId(normalizeDomainName(name));
+        plans.push({ name, subname: false });
+        return {
+          target: registrarAddress,
+          allowFailure: true,
+          callData: encodeFunctionData({
+            abi: registrarAbi,
+            functionName: "ownerOf",
+            args: [tokenId],
+          }),
+        };
+      });
 
-    const results: Aggregate3Result[] = [];
-    for (let i = 0; i < calls.length; i += MULTICALL_CHUNK_SIZE) {
-      const chunk = calls.slice(i, i + MULTICALL_CHUNK_SIZE);
-      const chunkResults = await multicallOwnerOfChunk(network.multiCall, chunk, originSs58);
-      results.push(...chunkResults);
-    }
+      const res = await multicall.aggregate3!.query(calls, { origin: ZERO_SUBSTRATE_ADDRESS });
 
-    const checksummedOwner = getAddress(ownerAddress);
-    const ownershipMap = new Map<string, boolean>();
-
-    for (let i = 0; i < names.length; i++) {
-      const result = results[i];
-      if (!result?.success) {
-        ownershipMap.set(names[i]!, false);
-        continue;
+      // Whole-aggregate failure (multicall itself unreachable): fall back to the
+      // per-name defaults rather than throwing away the page.
+      if (!res.success) {
+        return new Map(plans.map((p) => [p.name, p.subname]));
       }
 
-      try {
-        const isSubnameCall = encodedCalls[i]?.isSubnameCall ?? false;
-        const decoded = decodeFunctionResult({
-          abi: abiStore.getABI(isSubnameCall ? "DotnsRegistry" : "DotnsRegistrar"),
-          functionName: isSubnameCall ? "owner" : "ownerOf",
+      const results = res.value as { success: boolean; returnData: Hex }[];
+      const ownership = new Map<string, boolean>();
+
+      results.forEach((result, i) => {
+        const plan = plans[i]!;
+        if (plan.subname) {
+          // registry.owner: miss/failure → owned-by-default (true), else compare.
+          if (!result.success) return ownership.set(plan.name, true);
+          const owner = decodeFunctionResult({
+            abi: registryAbi,
+            functionName: "owner",
+            data: result.returnData,
+          }) as Address;
+          ownership.set(
+            plan.name,
+            !owner || owner === zeroAddress ? true : getAddress(owner) === checksummedOwner,
+          );
+          return;
+        }
+        // registrar.ownerOf: miss/failure → not owned (false), else compare.
+        if (!result.success) return ownership.set(plan.name, false);
+        const owner = decodeFunctionResult({
+          abi: registrarAbi,
+          functionName: "ownerOf",
           data: result.returnData,
         }) as Address;
+        ownership.set(
+          plan.name,
+          !owner || owner === zeroAddress ? false : getAddress(owner) === checksummedOwner,
+        );
+      });
 
-        if (!decoded || decoded === zeroAddress) {
-          ownershipMap.set(names[i]!, isSubnameCall);
-          continue;
-        }
-
-        ownershipMap.set(names[i]!, getAddress(decoded) === checksummedOwner);
-      } catch {
-        ownershipMap.set(names[i]!, false);
-      }
-    }
-
-    return ownershipMap;
+      return ownership;
+    });
   }
 
   return {
-    encodeOwnerOfCall,
-    multicallOwnerOfChunk,
     batchVerifyOwnership,
     isSubname,
   };

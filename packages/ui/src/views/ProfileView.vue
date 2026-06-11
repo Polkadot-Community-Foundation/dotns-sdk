@@ -191,7 +191,10 @@
                   class="hover:bg-dot-surface-secondary transition-colors duration-150"
                 >
                   <td class="px-4 py-2.5 font-medium text-dot-text-primary whitespace-nowrap">
-                    {{ domain.name }}
+                    <span class="inline-flex items-center gap-2">
+                      {{ domain.name }}
+                      <PrimaryNameBadge :name="domain.name" :primary-name="primaryName" />
+                    </span>
                   </td>
 
                   <td class="px-4 py-2.5">
@@ -284,6 +287,14 @@
                       <Button size="sm" variant="secondary" @click="openResolve(domain.name)">
                         Resolve
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        :disabled="!domain.isOwner || getType(domain.name) !== 'TLD'"
+                        @click="openDelegateModal(domain.name)"
+                      >
+                        Delegate
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -301,7 +312,7 @@
         </div>
       </div>
 
-      <div v-else key="bulletin">
+      <div v-else-if="activeTab === 'bulletin'" key="bulletin">
         <div
           class="mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3"
         >
@@ -498,6 +509,10 @@
           />
         </div>
       </div>
+
+      <div v-else key="escrow">
+        <EscrowTab :tlds="tlds" />
+      </div>
     </Transition>
 
     <AddSubdomainModal
@@ -514,6 +529,13 @@
       @transferred="handleDomainTransferred"
     />
 
+    <DelegateDomainModal
+      :open="showDelegateModal"
+      :domain="delegateDomain"
+      @close="showDelegateModal = false"
+      @delegated="handleDelegated"
+    />
+
     <TransactionStatus
       :open="showTransaction"
       :handle="selectedHandle"
@@ -527,17 +549,6 @@
       @close="showResolveModal = false"
       @save="saveResolve"
     />
-
-    <AuthorizeStoreModal
-      v-if="authGuard.showAuthModal.value"
-      :open="authGuard.showAuthModal.value"
-      :contracts="authGuard.authStatuses.value"
-      :loading="authGuard.authLoading.value"
-      :progress="authGuard.authProgress.value"
-      :error="authGuard.authError.value"
-      @close="authGuard.handleAuthClose"
-      @submit="authGuard.handleAuthSubmit"
-    />
   </main>
 </template>
 
@@ -546,13 +557,15 @@ import { ref, computed, onBeforeMount, watch } from "vue";
 import { useWalletStore } from "@/store/useWalletStore";
 import AddSubdomainModal from "../components/modals/AddSubdomainModal.vue";
 import TransferDomainModal from "../components/modals/TransferDomainModal.vue";
-import AuthorizeStoreModal from "../components/modals/AuthorizeStoreModal.vue";
+import DelegateDomainModal from "../components/modals/DelegateDomainModal.vue";
 import ResolveIPFSModal from "../components/modals/ResolveIPFSModal.vue";
 import TransactionStatus from "../components/TransactionStatus.vue";
-import { useStoreAuthGuard } from "@/composables/useStoreAuthGuard";
 import type { MyDomain, TransactionResult, NameRequirement } from "@/type";
 import { zeroHash, type Address } from "viem";
 import { useRouter } from "vue-router";
+import { useToast } from "vue-toastification";
+import { dotliViewUrls } from "@/lib/dotli";
+import PrimaryNameBadge from "@/components/PrimaryNameBadge.vue";
 import { useResolverStore } from "@/store/useResolverStore";
 import { useUserStoreManager } from "@/store/useUserStoreManager";
 import { useDomainStore } from "@/store/useDomainStore";
@@ -562,12 +575,15 @@ import { useTooltip, useTooltipManager, useMulticallOwnership } from "@/composab
 import Icon from "@/components/ui/Icon.vue";
 import Button from "@/components/ui/Button.vue";
 import TablePagination from "@/components/ui/TablePagination.vue";
+import EscrowTab from "../components/profile/EscrowTab.vue";
 import { encodeForPreview } from "@/lib/preview";
 
 const wallet = useWalletStore();
-const authGuard = useStoreAuthGuard();
 const isLoading = ref(true);
 const allDomains = ref<MyDomain[]>([]);
+// The account's reverse record: the one name that resolves back to it, shown as
+// "Primary" and highlighted in the domains list.
+const primaryName = ref<string | null>(null);
 const searchQuery = ref("");
 const showAddModal = ref<any>(null);
 const showTransferModal = ref(false);
@@ -577,10 +593,11 @@ const transaction = ref<TransactionResult>({ hash: zeroHash, status: false });
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
 const tlds = ref<string[]>([]);
-const activeTab = ref<"domains" | "bulletin">("domains");
+const activeTab = ref<"domains" | "bulletin" | "escrow">("domains");
 const tabs = [
   { id: "domains" as const, label: "My Domains" },
   { id: "bulletin" as const, label: "Bulletin Uploads" },
+  { id: "escrow" as const, label: "Escrow" },
 ];
 const bulletinUploads = ref<string[]>([]);
 const isLoadingUploads = ref(false);
@@ -639,6 +656,7 @@ async function handleDeleteCid(cid: string) {
 }
 
 const router = useRouter();
+const toast = useToast();
 const showResolveModal = ref(false);
 const selectedDomain = ref("");
 const resolverStore = useResolverStore();
@@ -669,6 +687,19 @@ const {
 
 function openRecordEditor(name: string) {
   router.push(`/whois/${name}`);
+}
+
+const showDelegateModal = ref(false);
+const delegateDomain = ref("");
+
+function openDelegateModal(name: string) {
+  delegateDomain.value = name;
+  showDelegateModal.value = true;
+}
+
+function handleDelegated() {
+  showDelegateModal.value = false;
+  loadDomains();
 }
 
 function parseDotName(name: string): { parts: string[]; tldLabel: string } {
@@ -717,16 +748,12 @@ const transferableTlds = computed(() =>
 
 function openAddSubdomains() {
   if (tlds.value.length > 0) {
-    authGuard.checkAuthAndProceed(() => {
-      showAddModal.value = { open: true, tld: "", tlds };
-    });
+    showAddModal.value = { open: true, tld: "", tlds };
   }
 }
 
 function openTransferModal() {
-  authGuard.checkAuthAndProceed(() => {
-    showTransferModal.value = true;
-  });
+  showTransferModal.value = true;
 }
 
 function openResolve(domain: string) {
@@ -748,8 +775,13 @@ async function saveResolve(hash: string) {
   try {
     const tx = await resolverStore.setContentHash(selectedDomain.value, hash);
     transaction.value = tx;
-  } catch {
+    if (tx.status) {
+      const [production, paseo] = dotliViewUrls(selectedDomain.value);
+      toast.success(`Content set. View on dot.li:\n${production}\n${paseo}`);
+    }
+  } catch (error) {
     transaction.value = { hash: zeroHash, status: false };
+    toast.error(error instanceof Error ? error.message : "Failed to set content hash");
   }
 }
 
@@ -768,6 +800,10 @@ async function loadDomains() {
   isLoading.value = true;
 
   try {
+    primaryName.value = wallet.evmAddress
+      ? await resolverStore.resolveAddressToName(wallet.evmAddress as Address)
+      : null;
+
     const names = await userStoreManager.getSubdomains();
     if (names.length === 0) {
       allDomains.value = [];

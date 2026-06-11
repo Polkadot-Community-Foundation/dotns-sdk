@@ -1,5 +1,4 @@
 import { normalize } from "viem/ens";
-import { PopStatus } from "@/type";
 
 /**
  * Domain Name Utilities
@@ -11,6 +10,16 @@ const DOT_NAME_REGEX =
   /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.dot$/;
 
 export const SPECIAL_CHAR_REGEX = /[&^%$*+~=`{}|\\<>\/\[\]"]+/;
+
+// A single canonical DNS label, mirroring the contract's StringUtils._isDnsLabel
+// (PopRules._requireCanonicalLabel): lowercase ASCII letters, digits and hyphen
+// only, no leading or trailing hyphen, length 1-63, and no dots. Names that fail
+// this revert at classify/register, so the UI must reject them up front.
+const CANONICAL_LABEL_REGEX = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+
+export function isCanonicalLabel(label: string): boolean {
+  return label.length > 0 && label.length <= 63 && CANONICAL_LABEL_REGEX.test(label);
+}
 
 /**
  * Validate an ENS/dotNS label
@@ -67,6 +76,22 @@ export function normalizeDomainName(name: string): string {
 }
 
 /**
+ * Compare two .dot names for equality, ignoring case, surrounding whitespace,
+ * and an optional trailing .dot suffix.
+ *
+ * @returns false if either name is empty/missing
+ */
+export function isSameDotName(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  const strip = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/\.dot$/, "");
+  return strip(a) === strip(b);
+}
+
+/**
  * Filter an array to only include valid .dot domain names
  *
  * @param values - Array of values to filter
@@ -93,17 +118,6 @@ export function filterDotNames(values: unknown): string[] {
   }
 
   return out;
-}
-
-/**
- * Check if a label can be registered with the given PoP status
- *
- * @param label - Domain label
- * @param state - User's PoP status
- * @returns True if registration is allowed
- */
-export function canRegisterWithStatus(label: string, state: PopStatus | null): boolean {
-  return state !== null && label.trim().length > 0 && state !== PopStatus.Reserved;
 }
 
 /**

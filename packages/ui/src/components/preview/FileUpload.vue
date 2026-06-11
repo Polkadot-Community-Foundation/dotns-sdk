@@ -7,9 +7,7 @@ import { useBulletinStore } from "@/store/useBulletinStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import Button from "@/components/ui/Button.vue";
 import TransactionStatus from "@/components/TransactionStatus.vue";
-import AuthorizeStoreModal from "@/components/modals/AuthorizeStoreModal.vue";
 import UploadApprovalStepper from "./UploadApprovalStepper.vue";
-import { useStoreAuthGuard } from "@/composables/useStoreAuthGuard";
 import { useUserStoreManager } from "@/store/useUserStoreManager";
 import { encodeForPreview } from "@/lib/preview";
 import type { TransactionResult } from "@/type";
@@ -26,7 +24,6 @@ const router = useRouter();
 const toast = useToast();
 const bulletinStore = useBulletinStore();
 const walletStore = useWalletStore();
-const authGuard = useStoreAuthGuard();
 const userStoreManager = useUserStoreManager();
 const cacheToStore = ref(false);
 const hasStore = ref(false);
@@ -354,7 +351,7 @@ async function startUpload(): Promise<void> {
     return;
   }
 
-  await authGuard.checkAuthAndProceed(executeUpload);
+  await executeUpload();
 }
 
 function handleTransactionClose(): void {
@@ -692,7 +689,7 @@ function handleTransactionClose(): void {
           </span>
           <span class="text-dot-text-secondary">
             Save CID to on-chain Store
-            <span v-if="!hasStore" class="text-dot-text-tertiary">(will deploy a Store)</span>
+            <span v-if="!hasStore" class="text-dot-text-tertiary">(will claim a Store)</span>
           </span>
         </button>
       </div>
@@ -768,10 +765,10 @@ function handleTransactionClose(): void {
           </button>
         </div>
         <router-link
-          to="/docs/dweb/bulletin"
+          to="/docs/dotli/publishing"
           class="text-dot-accent hover:text-dot-accent-hover hover:underline transition-colors duration-200 inline-block mt-1"
         >
-          Learn more about authorization
+          Learn more about publishing
         </router-link>
       </div>
       <button
@@ -792,16 +789,6 @@ function handleTransactionClose(): void {
       handle="Saving CID to Store"
       :transaction="transaction"
       @close="handleTransactionClose"
-    />
-
-    <AuthorizeStoreModal
-      :open="authGuard.showAuthModal.value"
-      :contracts="authGuard.authStatuses.value"
-      :loading="authGuard.authLoading.value"
-      :progress="authGuard.authProgress.value"
-      :error="authGuard.authError.value"
-      @submit="authGuard.handleAuthSubmit"
-      @close="authGuard.handleAuthClose"
     />
   </div>
 </template>
