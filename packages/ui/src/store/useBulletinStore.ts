@@ -33,7 +33,7 @@ const STORE_TIMEOUT_MS = 120_000;
 const UPLOAD_GLOBAL_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS_MS = [200, 400, 800] as const;
-const RELEASES_URL = "https://github.com/Polkadot-Community-Foundation/dotns-sdk/releases";
+const RELEASES_URL = "https://github.com/paritytech/dotns-sdk/releases";
 
 type UploadStage =
   | "idle"
