@@ -5,13 +5,13 @@ const activeTab = ref<"file" | "folder">("file");
 const copiedCommand = ref<string | null>(null);
 const selectedPm = ref<"npm" | "yarn" | "bun-mac" | "bun-win">("npm");
 
-const RELEASES_URL = "https://github.com/Polkadot-Community-Foundation/dotns-sdk/releases";
+const RELEASES_URL = "https://github.com/paritytech/dotns-sdk/releases";
 
 const installCommands = {
-  npm: "npm install -g @polkadot-community-foundation/dotns-cli",
-  yarn: "yarn global add @polkadot-community-foundation/dotns-cli",
-  "bun-mac": "bun add -g @polkadot-community-foundation/dotns-cli",
-  "bun-win": "bun add -g @polkadot-community-foundation/dotns-cli",
+  npm: "npm install -g @parity/dotns-cli",
+  yarn: "yarn global add @parity/dotns-cli",
+  "bun-mac": "bun add -g @parity/dotns-cli",
+  "bun-win": "bun add -g @parity/dotns-cli",
 };
 
 const pmLabels = {

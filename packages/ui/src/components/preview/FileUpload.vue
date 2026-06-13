@@ -20,7 +20,7 @@ const emit = defineEmits<{
   error: [message: string];
 }>();
 
-const RELEASES_URL = "https://github.com/Polkadot-Community-Foundation/dotns-sdk/releases";
+const RELEASES_URL = "https://github.com/paritytech/dotns-sdk/releases";
 
 const router = useRouter();
 const toast = useToast();
