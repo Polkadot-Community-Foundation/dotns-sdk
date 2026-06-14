@@ -13,6 +13,8 @@ import cdmJsonRaw from "../../cdm.json" with { type: "json" };
 import { labelStoreAbi } from "@/lib/abis/labelStore";
 import { userStoreAbi } from "@/lib/abis/userStore";
 import { nameEscrowAbi, NAME_ESCROW_ADDRESS } from "@/lib/abis/nameEscrow";
+import { popControllerAbi, POP_CONTROLLER_ADDRESS } from "@/lib/abis/popController";
+import { popResolverAbi, POP_RESOLVER_ADDRESS } from "@/lib/abis/popResolver";
 import { getChainClient } from "@/composables/useTypedAPI";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { signerManager } from "@/store/useWalletStore";
@@ -107,13 +109,25 @@ export async function getProxyContract(
   return createContract(m.getRuntime(), address, abi, { signerManager });
 }
 
-// The name-escrow contract is absent from the CDM meta-registry, so it cannot be
-// resolved by getContract(). It is wired by explicit address + vendored ABI, the
-// same approach used for the personhood precompile.
-export async function getEscrowContract(): Promise<Contract<ContractDef>> {
+// Contracts absent from the CDM meta-registry are wired by explicit address +
+// vendored ABI (name escrow, PoP controller, PoP resolver), mirroring how the
+// personhood precompile is resolved.
+async function getVendoredContract(
+  address: HexString,
+  abi: AbiEntry[],
+): Promise<Contract<ContractDef>> {
   const m = await getContractManager();
-  return createContract(m.getRuntime(), NAME_ESCROW_ADDRESS, nameEscrowAbi, { signerManager });
+  return createContract(m.getRuntime(), address, abi, { signerManager });
 }
+
+export const getEscrowContract = (): Promise<Contract<ContractDef>> =>
+  getVendoredContract(NAME_ESCROW_ADDRESS, nameEscrowAbi);
+
+export const getPopControllerContract = (): Promise<Contract<ContractDef>> =>
+  getVendoredContract(POP_CONTROLLER_ADDRESS, popControllerAbi);
+
+export const getPopResolverContract = (): Promise<Contract<ContractDef>> =>
+  getVendoredContract(POP_RESOLVER_ADDRESS, popResolverAbi);
 
 export function getAbi(library: string): AbiEntry[] {
   const entry = cdmJson.contracts?.[library];

@@ -112,8 +112,6 @@ export type AuthOptionValues = {
   rpc?: string;
   /** Path to keystore directory */
   keystorePath?: string;
-  /** Minimum balance in PAS required for operations */
-  minBalance?: string;
   /** Account name to use from keystore */
   account?: string;
   /** Password to decrypt keystore */
@@ -268,15 +266,6 @@ export type BulletinStoreResult = {
 export type ChunkedStoreResult = {
   /** Root CID of the DAG-PB merkle tree linking all chunks */
   rootCid: string;
-};
-
-export type BalanceStatus = {
-  /** Whether balance meets minimum requirement */
-  ok: boolean;
-  /** Current account balance in native units */
-  current: bigint;
-  /** Required minimum balance in native units */
-  required: bigint;
 };
 
 export type AccountInfoOptions = {
@@ -637,8 +626,6 @@ type BaseChainContext = {
   environment?: string;
   /** WebSocket RPC endpoint URL */
   rpc: string;
-  /** Minimum balance in PAS required for operations */
-  minBalancePas: string;
   /** Path to keystore directory */
   keystorePath: string;
   /** Resolved authentication source */
@@ -726,6 +713,8 @@ export type DomainLookupResult = {
   } | null;
   /** PopRules reservation status for the base name, or null if the label has no trailing digits. */
   baseNameReservation: BaseNameReservation | null;
+  /** The name's chat key from the PoP resolver (hex), or null if none is set. */
+  chatKey: string | null;
 };
 
 export type ChainContext = AssetHubContext | BulletinContext;
