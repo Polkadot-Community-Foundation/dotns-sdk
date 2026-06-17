@@ -2,6 +2,11 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import { lazyLoad, isChunkLoadError } from "@/lib/lazyLoad";
 import { formatErrorMessage } from "@/lib/errorHandling";
 
+// /upload and /preview share one component so Vue Router reuses the instance
+// between them; a separate lazyLoad() per route would unmount PreviewView on the
+// transition and discard the post-upload hand-off cache (blank preview).
+const previewView = lazyLoad(() => import("../views/PreviewView.vue"));
+
 const routes = [
   {
     path: "/",
@@ -27,12 +32,12 @@ const routes = [
   {
     path: "/upload",
     name: "Upload",
-    component: lazyLoad(() => import("../views/PreviewView.vue")),
+    component: previewView,
   },
   {
     path: "/preview/:encoded?",
     name: "PreviewEncoded",
-    component: lazyLoad(() => import("../views/PreviewView.vue")),
+    component: previewView,
   },
   {
     path: "/docs",
@@ -155,29 +160,29 @@ const routes = [
         component: lazyLoad(() => import("../views/docs/contracts/StoreContractPage.vue")),
       },
       {
-        path: "dweb/overview",
-        name: "DocsDwebOverview",
-        component: lazyLoad(() => import("../views/docs/dweb/DwebOverviewPage.vue")),
+        path: "dotli/overview",
+        name: "DocsDotliOverview",
+        component: lazyLoad(() => import("../views/docs/dotli/OverviewPage.vue")),
       },
       {
-        path: "dweb/hosting",
-        name: "DocsDwebHosting",
-        component: lazyLoad(() => import("../views/docs/dweb/HostingPage.vue")),
+        path: "dotli/resolution",
+        name: "DocsDotliResolution",
+        component: lazyLoad(() => import("../views/docs/dotli/ResolutionPage.vue")),
       },
       {
-        path: "dweb/bulletin",
-        name: "DocsBulletin",
-        component: lazyLoad(() => import("../views/docs/dweb/BulletinPage.vue")),
+        path: "dotli/rendering",
+        name: "DocsDotliRendering",
+        component: lazyLoad(() => import("../views/docs/dotli/RenderingPage.vue")),
       },
       {
-        path: "dweb/gateway",
-        name: "DocsGateway",
-        component: lazyLoad(() => import("../views/docs/dweb/GatewayPage.vue")),
+        path: "dotli/publishing",
+        name: "DocsDotliPublishing",
+        component: lazyLoad(() => import("../views/docs/dotli/PublishingPage.vue")),
       },
       {
-        path: "dweb/deploy-workflow",
-        name: "DocsDeployWorkflow",
-        component: lazyLoad(() => import("../views/docs/dweb/DeployWorkflowPage.vue")),
+        path: "dotli/bulletin",
+        name: "DocsDotliBulletin",
+        component: lazyLoad(() => import("../views/docs/dotli/BulletinPage.vue")),
       },
       {
         path: "tools/cli",

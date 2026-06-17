@@ -1,227 +1,119 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
 import {
-  encodeFunctionData,
   keccak256,
-  encodePacked,
-  zeroAddress,
-  zeroHash,
   toHex,
+  stringToHex,
+  hexToString,
+  zeroAddress,
   type Address,
   type Hash,
+  type Hex,
   isAddress,
-  decodeFunctionResult,
 } from "viem";
-import { useNetworkStore } from "./useNetworkStore";
-import { useTransactionStore } from "./useTransactionStore";
-import { useAbiStore } from "./useAbiStore";
-import {
-  filterDotNames,
-  isValidSubstrateAddress,
-  normalizeDomainName,
-  ZERO_SUBSTRATE_ADDRESS,
-} from "../utils";
-import type { ContractAuthStatus, DotnsAvailability } from "@/type";
+import { getContract, getProxyContract, withContractRecovery } from "@/composables/useContracts";
+import { useContractWrite } from "@/lib/contractWrite";
+import { isValidSubstrateAddress, normalizeDomainName, ZERO_SUBSTRATE_ADDRESS } from "../utils";
+import type { DotnsAvailability } from "@/type";
 import { useResolverStore } from "./useResolverStore";
 import { useWalletStore } from "./useWalletStore";
 
-const BULLETIN_CID_KEY_PREFIX = "dotns.bulletin.";
+// Store getters cap each getLabels/getKeys call at this size, so reads must page.
+const STORE_PAGE_SIZE = 256n;
+
+const ZERO: Address = zeroAddress;
+
+// Pages a store getter to completion; fetchPage returns one page, or null on query failure.
+async function readAllPages<T>(
+  fetchPage: (offset: bigint, limit: bigint) => Promise<readonly T[] | null>,
+): Promise<T[]> {
+  const items: T[] = [];
+  for (let offset = 0n; ; offset += STORE_PAGE_SIZE) {
+    const page = await fetchPage(offset, STORE_PAGE_SIZE);
+    if (!page) break;
+    items.push(...page);
+    if (page.length < Number(STORE_PAGE_SIZE)) break;
+  }
+  return items;
+}
+
+// UserStore keys are bytes32. To stay interoperable with the CLI (`dotns store`),
+// a plain string key is hashed exactly as the CLI does: keccak256(toHex(value)).
+function userStoreKey(value: string): Hash {
+  return keccak256(toHex(value));
+}
 
 export const useUserStoreManager = defineStore("userStoreManager", () => {
-  const userStore = ref<Address>(zeroAddress);
   const walletStore = useWalletStore();
-  const networkStore = useNetworkStore();
-  const transactionStore = useTransactionStore();
   const resolverStore = useResolverStore();
-  const abiStore = useAbiStore();
+  const { txOptions, withWrite, submitWrite } = useContractWrite();
 
-  function encodeKey(walletAddress: Address, value: string): Hash {
-    return keccak256(encodePacked(["address", "string"], [walletAddress, value]));
-  }
-
-  function getRequiredContracts(): { name: string; address: Address }[] {
-    const network = networkStore.currentNetwork;
-    const contracts: { name: string; address: Address }[] = [];
-    if (network?.dotnsRegistrarController) {
-      contracts.push({ name: "Registrar Controller", address: network.dotnsRegistrarController });
-    }
-    if (network?.dotnsRegistry) {
-      contracts.push({ name: "Registry", address: network.dotnsRegistry });
-    }
-    if (network?.dotnsRegistrar) {
-      contracts.push({ name: "Registrar", address: network.dotnsRegistrar });
-    }
-    return contracts;
-  }
-
-  async function ethRead(
-    to: Address,
-    functionName: string,
-    abiName: "Store" | "StoreFactory",
-    args: readonly unknown[],
-    targetEvm?: Address,
-  ): Promise<`0x${string}`> {
-    const data = encodeFunctionData({
-      abi: abiStore.getABI(abiName),
-      functionName,
-      args,
+  // LabelStore is protocol-deployed when a name is registered and holds the
+  // user's labels. UserStore is user-claimed via claimUserStore and holds
+  // arbitrary key/value data including Bulletin CIDs; ensureUserStore claims it
+  // on first write.
+  function readFactoryAddress(method: "getLabelStore" | "getUserStore", evm: Address) {
+    return withContractRecovery(async () => {
+      const factory = await getContract("@dotns/store-factory");
+      const result = await factory[method]!.query(evm, { origin: ZERO_SUBSTRATE_ADDRESS });
+      return result.success ? ((result.value as Address) ?? ZERO) : ZERO;
     });
-    const client = await networkStore.getClient();
-    let origin = walletStore.substrateAddress;
-    if (!origin && targetEvm) {
-      origin = await client.getSubstrateAddress(targetEvm);
-    }
-    return transactionStore.ethCall(client, origin || ZERO_SUBSTRATE_ADDRESS, to, data);
   }
 
-  async function ethWrite(to: Address, data: `0x${string}`): Promise<Hash> {
-    await walletStore.ensureReady();
-    const client = await networkStore.getClient();
-    return transactionStore.ethTransact(
-      client,
-      walletStore.getInjected(),
-      walletStore.substrateAddress!,
-      { to, data },
-    );
+  async function getLabelStore(evm: Address): Promise<Address> {
+    return readFactoryAddress("getLabelStore", evm);
   }
 
-  async function getUserStore(accountEvm: Address): Promise<Address> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.storeFactory) throw new Error("StoreFactory not configured");
-
-      const raw = await ethRead(network.storeFactory, "getDeployedStore", "StoreFactory", [
-        accountEvm,
-      ]);
-
-      const store = decodeFunctionResult({
-        abi: abiStore.getABI("StoreFactory"),
-        functionName: "getDeployedStore",
-        data: raw,
-      }) as Address;
-
-      userStore.value = store;
-      return store;
-    } catch (error) {
-      const isZeroData =
-        error instanceof Error && error.message.includes("Cannot decode zero data");
-      if (!isZeroData) {
-        console.warn("[UserStoreManager:getUserStore]", error);
-      }
-      userStore.value = zeroAddress;
-      return zeroAddress;
-    }
+  async function getUserStore(evm: Address): Promise<Address> {
+    return readFactoryAddress("getUserStore", evm);
   }
 
-  async function deployStore(): Promise<Hash> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
+  // Claim the caller's UserStore (StoreFactory.claimUserStore). Required once
+  // before any write to user data; returns the claim transaction hash.
+  async function claimUserStore(): Promise<Hash> {
+    return withWrite(async () => {
+      const factory = await getContract("@dotns/store-factory");
+      return submitWrite(factory.claimUserStore!.tx(txOptions()), "Claim store");
+    });
+  }
 
-      const network = networkStore.currentNetwork;
-      if (!network?.storeFactory) throw new Error("StoreFactory not configured");
+  // Resolve the caller's UserStore, claiming it first if they have none. This is
+  // the guard every write-to-store action should call before writing.
+  async function ensureUserStore(): Promise<Address> {
+    const evm = walletStore.evmAddress as Address | undefined;
+    if (!evm) throw new Error("Connect a wallet to claim a UserStore.");
+    const existing = await getUserStore(evm);
+    if (existing !== ZERO) return existing;
+    await claimUserStore();
+    const claimed = await getUserStore(evm);
+    if (claimed === ZERO) throw new Error("UserStore claim did not produce a store address.");
+    return claimed;
+  }
 
-      const existing = await getUserStore(walletStore.evmAddress as Address);
-      if (existing !== zeroAddress) return zeroHash;
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("StoreFactory"),
-        functionName: "deploy",
-        args: [],
+  async function getSubdomainsForAddress(evm: Address): Promise<string[]> {
+    return withContractRecovery(async () => {
+      const labelStore = await getLabelStore(evm);
+      if (labelStore === ZERO) return [];
+      const store = await getProxyContract("@dotns/label-store", labelStore);
+      return readAllPages<string>(async (offset, limit) => {
+        const result = await store.getLabels!.query(offset, limit, {
+          origin: ZERO_SUBSTRATE_ADDRESS,
+        });
+        return result.success ? ((result.value as string[]) ?? []) : null;
       });
-
-      const hash = await ethWrite(network.storeFactory, data);
-      await getUserStore(walletStore.evmAddress as Address);
-      return hash;
-    } catch (error) {
-      console.warn("[UserStoreManager:deployStore]", error);
-      throw error;
-    }
+    });
   }
 
   async function getSubdomains(): Promise<string[]> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const store = await getUserStore(walletStore.evmAddress as Address);
-      if (store === zeroAddress) return [];
-
-      const raw = await ethRead(store, "getValues", "Store", []);
-      const allValues = decodeFunctionResult({
-        abi: abiStore.getABI("Store"),
-        functionName: "getValues",
-        data: raw,
-      }) as string[];
-
-      return filterDotNames(allValues);
-    } catch (error) {
-      console.warn("[UserStoreManager:getSubdomains]", error);
-      return [];
-    }
-  }
-
-  async function getSubdomainsForAddress(targetEvm: Address): Promise<string[]> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-
-      const network = networkStore.currentNetwork;
-      if (!network?.storeFactory) throw new Error("StoreFactory not configured");
-
-      const storeRaw = await ethRead(
-        network.storeFactory,
-        "getDeployedStore",
-        "StoreFactory",
-        [targetEvm],
-        targetEvm,
-      );
-
-      if (!storeRaw || storeRaw === "0x") return [];
-
-      const store = decodeFunctionResult({
-        abi: abiStore.getABI("StoreFactory"),
-        functionName: "getDeployedStore",
-        data: storeRaw,
-      }) as Address;
-
-      if (store === zeroAddress) return [];
-
-      const valuesRaw = await ethRead(store, "getValues", "Store", [], targetEvm);
-
-      if (!valuesRaw || valuesRaw === "0x") return [];
-
-      const allValues = decodeFunctionResult({
-        abi: abiStore.getABI("Store"),
-        functionName: "getValues",
-        data: valuesRaw,
-      }) as string[];
-
-      return allValues;
-    } catch (error) {
-      const isZeroData =
-        error instanceof Error && error.message.includes("Cannot decode zero data");
-      if (!isZeroData) {
-        console.warn("[UserStoreManager:getSubdomainsForAddress]", error);
-      }
-      return [];
-    }
+    const evm = walletStore.evmAddress;
+    if (!evm) return [];
+    return getSubdomainsForAddress(evm);
   }
 
   async function checkHandleAvailability(
     nameOrAddress: string | Address,
   ): Promise<DotnsAvailability> {
     const original = nameOrAddress;
-
     try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-
       if (typeof original === "string" && isValidSubstrateAddress(original)) {
         const evm = await walletStore.convertToEVM(original);
         const resolved = await resolverStore.resolveAddressToName(evm);
@@ -231,7 +123,6 @@ export const useUserStoreManager = defineStore("userStoreManager", () => {
           name: resolved ? normalizeDomainName(resolved) : null,
         };
       }
-
       if (typeof original === "string" && isAddress(original)) {
         const evm = original as Address;
         const resolved = await resolverStore.resolveAddressToName(evm);
@@ -241,266 +132,120 @@ export const useUserStoreManager = defineStore("userStoreManager", () => {
           name: resolved ? normalizeDomainName(resolved) : null,
         };
       }
-
       if (typeof original === "string") {
         const normalized = normalizeDomainName(original);
-
         const [resolvedAddress, nameOwner] = await Promise.all([
           resolverStore.resolveNameToAddress(normalized),
           resolverStore.getOwnerOfDomain(normalized),
         ]);
-
-        const owner = resolvedAddress ?? nameOwner ?? zeroAddress;
+        const owner = resolvedAddress ?? nameOwner ?? ZERO;
         return {
-          available: owner === zeroAddress,
+          available: owner === ZERO,
           owner,
           name: normalized,
         };
       }
-
-      return { available: false, owner: zeroAddress, name: String(original) };
+      return { available: false, owner: ZERO, name: String(original) };
     } catch (error) {
       console.warn("[UserStoreManager:checkHandleAvailability]", error);
       return {
         available: false,
-        owner: zeroAddress,
+        owner: ZERO,
         name: typeof original === "string" ? original : String(original),
       };
     }
   }
 
-  async function getAuthorizationStatus(store: Address): Promise<ContractAuthStatus[]> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-
-      const contracts = getRequiredContracts();
-      if (contracts.length === 0) return [];
-
-      const results = await Promise.all(
-        contracts.map(async (c) => {
-          try {
-            const raw = await ethRead(store, "isAuthorized", "Store", [c.address]);
-            const authorized = decodeFunctionResult({
-              abi: abiStore.getABI("Store"),
-              functionName: "isAuthorized",
-              data: raw,
-            }) as boolean;
-            return { name: c.name, address: c.address, authorized };
-          } catch {
-            return { name: c.name, address: c.address, authorized: false };
-          }
-        }),
-      );
-
-      return results;
-    } catch (error) {
-      console.warn("[UserStoreManager:getAuthorizationStatus]", error);
-      return getRequiredContracts().map((c) => ({ ...c, authorized: false }));
-    }
-  }
-
-  async function authorizeContract(store: Address, contractAddress: Address): Promise<Hash> {
-    walletStore.ensureWalletConnected();
-    const data = encodeFunctionData({
-      abi: abiStore.getABI("Store"),
-      functionName: "authorizeStore",
-      args: [contractAddress],
+  // Write a key/value into the caller's UserStore, claiming the store first if
+  // they have none. The single canonical write path for user data.
+  async function setUserStoreValue(key: Hash, value: Hex): Promise<Hash> {
+    const store = await ensureUserStore();
+    return withWrite(async () => {
+      const proxy = await getProxyContract("@dotns/user-store", store);
+      return submitWrite(proxy.setValue!.tx(key, value, txOptions()), "Save");
     });
-    return ethWrite(store, data);
   }
 
-  async function unauthorizeContract(store: Address, contractAddress: Address): Promise<Hash> {
-    walletStore.ensureWalletConnected();
-    const data = encodeFunctionData({
-      abi: abiStore.getABI("Store"),
-      functionName: "unauthorizeStore",
-      args: [contractAddress],
-    });
-    return ethWrite(store, data);
+  // Persist a Bulletin CID. Key/value encoding matches the CLI so
+  // `dotns store cids` and the UI read the same entries.
+  async function writeCidToStore(cid: string): Promise<Hash> {
+    return setUserStoreValue(userStoreKey(cid), stringToHex(cid));
   }
 
-  async function batchAuthChanges(
-    store: Address,
-    changes: { address: Address; authorize: boolean }[],
-  ): Promise<Hash> {
-    await walletStore.ensureReady();
-    walletStore.ensureWalletConnected();
-    await abiStore.ensureAbis();
-
-    const calls = changes.map((change) => ({
-      to: store,
-      data: encodeFunctionData({
-        abi: abiStore.getABI("Store"),
-        functionName: change.authorize ? "authorizeStore" : "unauthorizeStore",
-        args: [change.address],
-      }),
-    }));
-
-    if (calls.length === 1) {
-      return ethWrite(calls[0]!.to, calls[0]!.data);
-    }
-
-    const client = await networkStore.getClient();
-    return transactionStore.batchEthTransact(
-      client,
-      walletStore.getInjected(),
-      walletStore.substrateAddress!,
-      calls,
-    );
+  // UserStore has no delete; clearing a key means writing an empty value, which
+  // getBulletinUploads then filters out. Mirrors the CLI's delete behaviour.
+  async function deleteCidFromStore(cid: string): Promise<Hash> {
+    return setUserStoreValue(userStoreKey(cid), "0x");
   }
 
-  async function isNameInStore(label: string): Promise<boolean> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
-
-      const store = await getUserStore(walletStore.evmAddress as Address);
-      if (store === zeroAddress) return false;
-
-      const raw = await ethRead(store, "getValue", "Store", [keccak256(toHex(label))]);
-      const value = decodeFunctionResult({
-        abi: abiStore.getABI("Store"),
-        functionName: "getValue",
-        data: raw,
-      }) as string;
-
-      return value.length > 0;
-    } catch (error) {
-      console.warn("[UserStoreManager:isNameInStore]", error);
-      return false;
-    }
+  // Arbitrary string key/value access mirroring the CLI `store get/set/delete`.
+  // Keys are hashed (keccak256(toHex(key))), so they are write/lookup only and
+  // cannot be enumerated back to their original string.
+  async function setStringValue(key: string, value: string): Promise<Hash> {
+    return setUserStoreValue(userStoreKey(key), stringToHex(value));
   }
 
-  async function writeNameToStore(label: string): Promise<Hash> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
+  async function deleteStringValue(key: string): Promise<Hash> {
+    return setUserStoreValue(userStoreKey(key), "0x");
+  }
 
-      const store = await getUserStore(walletStore.evmAddress as Address);
-      if (store === zeroAddress) {
-        throw new Error("Store not deployed. Please deploy your Store first.");
-      }
-
-      const data = encodeFunctionData({
-        abi: abiStore.getABI("Store"),
-        functionName: "setValue",
-        args: [keccak256(toHex(label)), `${label}.dot`],
+  async function getStringValue(key: string): Promise<string | null> {
+    return withContractRecovery(async () => {
+      const evm = walletStore.evmAddress as Address | undefined;
+      if (!evm) return null;
+      const store = await getUserStore(evm);
+      if (store === ZERO) return null;
+      const proxy = await getProxyContract("@dotns/user-store", store);
+      const result = await proxy.getValue!.query(userStoreKey(key), {
+        origin: ZERO_SUBSTRATE_ADDRESS,
       });
-
-      return ethWrite(store, data);
-    } catch (error) {
-      console.warn("[UserStoreManager:writeNameToStore]", error);
-      throw error;
-    }
+      if (!result.success) return null;
+      const raw = result.value as Hex;
+      if (!raw || raw === "0x") return null;
+      return hexToString(raw) || null;
+    });
   }
 
   async function getBulletinUploads(): Promise<string[]> {
-    try {
-      networkStore.ensureClient();
-      await abiStore.ensureAbis();
-      walletStore.ensureWalletConnected();
+    return withContractRecovery(async () => {
+      const evm = walletStore.evmAddress as Address | undefined;
+      if (!evm) return [];
+      const store = await getUserStore(evm);
+      if (store === ZERO) return [];
 
-      const store = await getUserStore(walletStore.evmAddress as Address);
-      if (store === zeroAddress) return [];
+      const proxy = await getProxyContract("@dotns/user-store", store);
+      const keys = await readAllPages<Hash>(async (offset, limit) => {
+        const keysResult = await proxy.getKeys!.query(offset, limit, {
+          origin: ZERO_SUBSTRATE_ADDRESS,
+        });
+        return keysResult.success ? ((keysResult.value as Hash[]) ?? []) : null;
+      });
 
-      const raw = await ethRead(store, "getValues", "Store", []);
-      const allValues = decodeFunctionResult({
-        abi: abiStore.getABI("Store"),
-        functionName: "getValues",
-        data: raw,
-      }) as string[];
-
-      return allValues.filter(
-        (v) => typeof v === "string" && v.startsWith("baf") && !v.includes("."),
-      );
-    } catch (error) {
-      console.warn("[UserStoreManager:getBulletinUploads]", error);
-      return [];
-    }
-  }
-
-  async function ensureStoreDeployed(): Promise<Address> {
-    walletStore.ensureWalletConnected();
-    let store = await getUserStore(walletStore.evmAddress as Address);
-
-    if (store === zeroAddress) {
-      await deployStore();
-      store = await getUserStore(walletStore.evmAddress as Address);
-    }
-
-    if (store === zeroAddress) {
-      throw new Error("Failed to deploy Store contract.");
-    }
-
-    const statuses = await getAuthorizationStatus(store);
-    const unauthorized = statuses.filter((c) => !c.authorized);
-
-    if (unauthorized.length > 0) {
-      await batchAuthChanges(
-        store,
-        unauthorized.map((c) => ({ address: c.address, authorize: true })),
-      );
-    }
-
-    return store;
-  }
-
-  async function writeCidToStore(cid: string): Promise<Hash> {
-    networkStore.ensureClient();
-    await abiStore.ensureAbis();
-
-    const store = await ensureStoreDeployed();
-
-    const key = keccak256(toHex(`${BULLETIN_CID_KEY_PREFIX}${cid}`));
-    const data = encodeFunctionData({
-      abi: abiStore.getABI("Store"),
-      functionName: "setValue",
-      args: [key, cid],
+      const cids: string[] = [];
+      for (const key of keys) {
+        const valueResult = await proxy.getValue!.query(key, { origin: ZERO_SUBSTRATE_ADDRESS });
+        if (!valueResult.success) continue;
+        const raw = valueResult.value as Hex;
+        if (!raw || raw === "0x") continue;
+        const decoded = hexToString(raw);
+        if (decoded) cids.push(decoded);
+      }
+      return cids;
     });
-
-    return ethWrite(store, data);
-  }
-
-  async function deleteCidFromStore(cid: string): Promise<Hash> {
-    networkStore.ensureClient();
-    await abiStore.ensureAbis();
-    walletStore.ensureWalletConnected();
-
-    const store = await getUserStore(walletStore.evmAddress as Address);
-    if (store === zeroAddress) {
-      throw new Error("Store not deployed.");
-    }
-
-    const key = keccak256(toHex(`${BULLETIN_CID_KEY_PREFIX}${cid}`));
-    const data = encodeFunctionData({
-      abi: abiStore.getABI("Store"),
-      functionName: "deleteValue",
-      args: [key],
-    });
-
-    return ethWrite(store, data);
   }
 
   return {
-    userStore,
+    getLabelStore,
     getUserStore,
-    deployStore,
+    claimUserStore,
     getSubdomains,
     getSubdomainsForAddress,
     checkHandleAvailability,
-    getAuthorizationStatus,
-    authorizeContract,
-    unauthorizeContract,
-    batchAuthChanges,
-    isNameInStore,
-    writeNameToStore,
-    ensureStoreDeployed,
     writeCidToStore,
     deleteCidFromStore,
     getBulletinUploads,
-    encodeKey,
+    setStringValue,
+    getStringValue,
+    deleteStringValue,
   };
 });

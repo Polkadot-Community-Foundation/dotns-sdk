@@ -1,45 +1,34 @@
-import { paseo, type Paseo } from "@polkadot-api/descriptors";
-import { createClient, type PolkadotClient, type TypedApi } from "polkadot-api";
-import { getWsProvider } from "polkadot-api/ws-provider";
-import { withPolkadotSdkCompat } from "polkadot-api/polkadot-sdk-compat";
+import { getChainAPI } from "@parity/product-sdk-chain-client";
 
-let rawClient: PolkadotClient | null = null;
-let typedApiInstance: TypedApi<Paseo> | null = null;
-let currentRpcKey: string | null = null;
+type ChainClient = Awaited<ReturnType<typeof getChainAPI<"summit">>>;
 
-export const useTypeClientAPI = async (rpcEndPoints: string[]): Promise<TypedApi<Paseo>> => {
-  const rpcKey = rpcEndPoints.join(",");
+let chainPromise: Promise<ChainClient> | null = null;
 
-  if (typedApiInstance && currentRpcKey === rpcKey) {
-    return typedApiInstance;
+export const getChainClient = (): Promise<ChainClient> => {
+  if (!chainPromise) {
+    chainPromise = (async () => {
+      const chain = await getChainAPI("summit");
+      // Prime chainHead_follow before returning. PAPI v2's typed API uses
+      // chainHead operations under the hood; if the first downstream query
+      // races the subscription, it errors with "No active follow for this
+      // chain". A single cheap query forces the subscription to be live by
+      // the time anyone else uses the client.
+      await chain.assetHub.query.System.Number.getValue();
+      return chain;
+    })();
   }
-
-  if (rawClient) {
-    try {
-      rawClient.destroy();
-    } catch {
-      /* already destroyed */
-    }
-    rawClient = null;
-    typedApiInstance = null;
-  }
-
-  rawClient = createClient(withPolkadotSdkCompat(getWsProvider(rpcEndPoints)));
-  typedApiInstance = rawClient.getTypedApi(paseo);
-  currentRpcKey = rpcKey;
-
-  return typedApiInstance;
+  return chainPromise;
 };
 
-export function destroyTypeClientAPI(): void {
-  if (rawClient) {
-    try {
-      rawClient.destroy();
-    } catch {
-      /* already destroyed */
-    }
-    rawClient = null;
-    typedApiInstance = null;
-    currentRpcKey = null;
+export function destroyChainClient(): void {
+  if (chainPromise) {
+    void chainPromise.then((c) => {
+      try {
+        c.destroy();
+      } catch {
+        /* already destroyed */
+      }
+    });
+    chainPromise = null;
   }
 }

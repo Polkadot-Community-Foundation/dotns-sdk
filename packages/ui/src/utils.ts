@@ -29,18 +29,14 @@ export {
   formatTimestamp,
   addPercentage,
   getSecondsForUnit,
-  generateDummyDomains,
 } from "./lib/formatting";
 
 // Domain utilities
 export {
   SPECIAL_CHAR_REGEX,
   validateENSName,
+  isCanonicalLabel,
   normalizeDomainName,
-  filterDotNames,
-  canRegisterWithStatus,
-  extractBytes,
-  unwrap,
 } from "./lib/domain";
 
 // Cryptographic utilities
@@ -51,7 +47,6 @@ export {
   computeSubnode,
   computeDomainTokenId,
   ss58ToEthereum,
-  isMappedTypedApi,
   isValidSubstrateAddress,
 } from "./lib/crypto";
 
@@ -60,6 +55,7 @@ export {
   DECIMALS,
   NATIVE_TO_ETH_RATIO,
   convertWeiToNative,
+  convertWeiToNativeCeil,
   convertNativeToWei,
   formatNativeBalance,
   formatWeiAsEther,

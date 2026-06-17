@@ -1,15 +1,9 @@
-import chalk from "chalk";
-import type { Ora } from "ora";
 import { type Address } from "viem";
-import type { PolkadotSigner } from "polkadot-api";
-import type { ReviveClientWrapper } from "../client/polkadotClient";
-import { CONTRACTS, DOTNS_NAME_ESCROW_ABI, DOTNS_REGISTRAR_ABI } from "../utils/constants";
-import {
-  computeDomainTokenId,
-  performContractCall,
-  submitContractTransaction,
-} from "../utils/contractInteractions";
-import { formatWeiAsEther } from "../utils/formatting";
+import { type DotnsContext, read, write } from "../core/context";
+import { DOTNS_NAME_ESCROW_ABI, DOTNS_REGISTRAR_ABI } from "../utils/constants";
+import { computeDomainTokenId } from "../utils/contractInteractions";
+import { normaliseLabel } from "../utils/validation";
+import { isSameEvmAddress } from "../utils/address";
 
 /// On-chain release position for a token.
 export type EscrowPositionView = {
@@ -59,31 +53,25 @@ type RawRefundEntry = {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 
-/// Reads the current release position for a name. Returns null when the slot is empty.
-export async function viewEscrowPosition(
-  clientWrapper: ReviveClientWrapper,
-  originSubstrateAddress: string,
-  label: string,
-  spinner: Ora,
+/// Reads one release position by name. Returns null when the slot is empty.
+async function readPositionForName(
+  ctx: DotnsContext,
+  name: string,
 ): Promise<EscrowPositionView | null> {
+  const label = normaliseLabel(name);
   const tokenId = computeDomainTokenId(label);
-  spinner.start(`Reading escrow position for ${chalk.cyan(label + ".dot")}`);
 
-  const raw = await performContractCall<RawReleasePosition>(
-    clientWrapper,
-    originSubstrateAddress,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+  const raw = await read<RawReleasePosition>(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     DOTNS_NAME_ESCROW_ABI,
     "getReleasePosition",
     [tokenId],
   );
 
   if (raw.recipient === ZERO_ADDRESS && raw.amount === 0n && !raw.released) {
-    spinner.succeed(`No escrow position for ${chalk.cyan(label + ".dot")}`);
     return null;
   }
-
-  spinner.succeed(`Position for ${chalk.cyan(label + ".dot")}`);
 
   return {
     domain: label,
@@ -97,143 +85,168 @@ export async function viewEscrowPosition(
   };
 }
 
-/// Approves the escrow on the registrar then calls `release`. The caller must own the NFT.
-export async function releaseDomain(
-  clientWrapper: ReviveClientWrapper,
-  originSubstrateAddress: string,
-  signer: PolkadotSigner,
+/// Reads the current release position for a name. Returns null when the slot is empty.
+export async function getEscrowPosition(
+  ctx: DotnsContext,
   label: string,
-  spinner: Ora,
-): Promise<{ approveTxHash: string; releaseTxHash: string; tokenId: bigint }> {
-  const tokenId = computeDomainTokenId(label);
+): Promise<EscrowPositionView | null> {
+  return readPositionForName(ctx, label);
+}
 
-  spinner.start(`Approving escrow for ${chalk.cyan(label + ".dot")}`);
-  const approveTxHash = await submitContractTransaction(
-    clientWrapper,
-    CONTRACTS.DOTNS_REGISTRAR,
+/// All release positions belonging to `recipient`, across the names they hold. Labels
+/// are mirror-on-transfer and never deleted, so a released name still resolves through
+/// the caller's own label set; the recipient filter drops names transferred away.
+export async function listEscrowPositions(
+  ctx: DotnsContext,
+  recipient: Address,
+  names: string[],
+): Promise<EscrowPositionView[]> {
+  const positions: EscrowPositionView[] = [];
+  for (const name of names) {
+    const position = await readPositionForName(ctx, name).catch(() => null);
+    if (
+      position !== null &&
+      isSameEvmAddress(position.recipient, recipient) &&
+      isRefundableDeposit(position)
+    ) {
+      positions.push(position);
+    }
+  }
+  return positions;
+}
+
+/// A position is the user's escrow deposit only while it holds a refundable amount. Zero-amount
+/// entries are PopFull/PopLite lifecycle markers or already-withdrawn slots, not staked deposits.
+export function isRefundableDeposit(position: { amount: bigint }): boolean {
+  return position.amount > 0n;
+}
+
+/// Total still locked across positions. Withdrawn positions carry amount 0 (the contract
+/// zeroes it on withdraw), so they fall out of the sum naturally.
+export function totalEscrowAmount(positions: readonly { amount: bigint }[]): bigint {
+  return positions.reduce((sum, position) => sum + position.amount, 0n);
+}
+
+/// Seconds left on a released position's cooldown before it becomes withdrawable.
+export function cooldownRemainingSeconds(
+  position: Pick<EscrowPositionView, "withdrawAvailableAt">,
+  nowSeconds: bigint,
+): bigint {
+  const remaining = position.withdrawAvailableAt - nowSeconds;
+  return remaining > 0n ? remaining : 0n;
+}
+
+export function formatCooldown(seconds: bigint): string {
+  if (seconds <= 0n) return "0s";
+  const total = Number(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
+}
+
+/// Plain status text for a position, embedding the live cooldown countdown while a
+/// released name waits out its cooldown.
+export function formatPositionStatus(position: EscrowPositionView, nowSeconds: bigint): string {
+  if (position.claimed) return "claimed";
+  if (!position.released) return "held";
+  const remaining = cooldownRemainingSeconds(position, nowSeconds);
+  return remaining > 0n ? `cooldown ${formatCooldown(remaining)}` : "claimable";
+}
+
+/// Reads the caller's pull-payment ledger balance (withdrawn deposits plus
+/// registration-overpayment refunds). This is what `claimWithdrawal` drains and is
+/// independent of any open release position.
+export async function getPendingWithdrawal(ctx: DotnsContext, recipient: Address): Promise<bigint> {
+  return read<bigint>(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
+    DOTNS_NAME_ESCROW_ABI,
+    "pendingWithdrawal",
+    [recipient],
+  );
+}
+
+/// Approves the escrow on the registrar then calls `release`. The caller must own the NFT.
+export async function releaseName(
+  ctx: DotnsContext,
+  label: string,
+): Promise<{ approveTxHash: string; releaseTxHash: string; tokenId: bigint }> {
+  const tokenId = computeDomainTokenId(normaliseLabel(label));
+
+  const approveTxHash = await write(
+    ctx,
+    ctx.contracts.DOTNS_REGISTRAR,
     0n,
     DOTNS_REGISTRAR_ABI,
     "approve",
-    [CONTRACTS.DOTNS_NAME_ESCROW, tokenId],
-    originSubstrateAddress,
-    signer,
-    spinner,
+    [ctx.contracts.DOTNS_NAME_ESCROW, tokenId],
     "Approve escrow",
   );
 
-  spinner.start(`Releasing ${chalk.cyan(label + ".dot")} into escrow`);
-  const releaseTxHash = await submitContractTransaction(
-    clientWrapper,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+  const releaseTxHash = await write(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     0n,
     DOTNS_NAME_ESCROW_ABI,
     "release",
     [tokenId],
-    originSubstrateAddress,
-    signer,
-    spinner,
     "Release",
   );
 
-  spinner.succeed(`Released ${chalk.cyan(label + ".dot")} into escrow`);
   return { approveTxHash, releaseTxHash, tokenId };
 }
 
 /// Calls `withdraw` to credit the original depositor's pull-payment balance. Reverts before
 /// the per-position cooldown elapses.
-export async function withdrawDomain(
-  clientWrapper: ReviveClientWrapper,
-  originSubstrateAddress: string,
-  signer: PolkadotSigner,
-  label: string,
-  spinner: Ora,
-): Promise<string> {
-  const tokenId = computeDomainTokenId(label);
-
-  spinner.start(`Withdrawing ${chalk.cyan(label + ".dot")} from escrow`);
-  const txHash = await submitContractTransaction(
-    clientWrapper,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+export async function withdrawName(ctx: DotnsContext, label: string): Promise<string> {
+  const tokenId = computeDomainTokenId(normaliseLabel(label));
+  return write(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     0n,
     DOTNS_NAME_ESCROW_ABI,
     "withdraw",
     [tokenId],
-    originSubstrateAddress,
-    signer,
-    spinner,
     "Withdraw",
   );
-
-  spinner.succeed(`Withdraw queued; call \`escrow claim-withdrawal\` to receive funds.`);
-  return txHash;
 }
 
 /// Drains the legacy pull-payment ledger that holds registration-overpayment fallbacks. The
 /// caller receives the amount accumulated against their address.
-export async function claimWithdrawal(
-  clientWrapper: ReviveClientWrapper,
-  originSubstrateAddress: string,
-  signer: PolkadotSigner,
-  spinner: Ora,
-): Promise<string> {
-  spinner.start("Claiming pull-payment ledger balance");
-  const txHash = await submitContractTransaction(
-    clientWrapper,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+export async function claimWithdrawal(ctx: DotnsContext): Promise<string> {
+  return write(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     0n,
     DOTNS_NAME_ESCROW_ABI,
     "claimWithdrawal",
     [],
-    originSubstrateAddress,
-    signer,
-    spinner,
     "Claim withdrawal",
   );
-
-  spinner.succeed("Withdrawal claimed");
-  return txHash;
 }
 
 /// Reads the caller's pending refund ledger entries within a paginated window.
 export async function listRefunds(
-  clientWrapper: ReviveClientWrapper,
-  originSubstrateAddress: string,
+  ctx: DotnsContext,
   recipient: Address,
   offset: number,
   limit: number,
-  spinner: Ora,
 ): Promise<RefundsListResult> {
-  spinner.start(`Reading refund ledger for ${chalk.white(recipient)}`);
-
-  const total = await performContractCall<bigint>(
-    clientWrapper,
-    originSubstrateAddress,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+  const total = await read<bigint>(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     DOTNS_NAME_ESCROW_ABI,
     "pendingRefundCount",
     [recipient],
   );
 
-  const ids = await performContractCall<bigint[]>(
-    clientWrapper,
-    originSubstrateAddress,
-    CONTRACTS.DOTNS_NAME_ESCROW,
-    DOTNS_NAME_ESCROW_ABI,
-    "pendingRefundIds",
-    [recipient, BigInt(offset), BigInt(limit)],
-  );
-
-  const entries = await performContractCall<RawRefundEntry[]>(
-    clientWrapper,
-    originSubstrateAddress,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+  // pendingRefunds has two outputs, so the call decodes to a [ids, entries] tuple.
+  const [ids, entries] = await read<[bigint[], RawRefundEntry[]]>(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     DOTNS_NAME_ESCROW_ABI,
     "pendingRefunds",
     [recipient, BigInt(offset), BigInt(limit)],
-  );
-
-  spinner.succeed(
-    `Found ${chalk.yellow(total.toString())} entries; page returned ${entries.length}.`,
   );
 
   return {
@@ -251,64 +264,28 @@ export async function listRefunds(
 }
 
 /// Claims a single refund-ledger entry. Reverts before its independent cooldown elapses.
-export async function claimRefund(
-  clientWrapper: ReviveClientWrapper,
-  originSubstrateAddress: string,
-  signer: PolkadotSigner,
-  entryId: bigint,
-  spinner: Ora,
-): Promise<string> {
-  spinner.start(`Claiming refund entry #${chalk.yellow(entryId.toString())}`);
-  const txHash = await submitContractTransaction(
-    clientWrapper,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+export async function claimRefund(ctx: DotnsContext, entryId: bigint): Promise<string> {
+  return write(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     0n,
     DOTNS_NAME_ESCROW_ABI,
     "claimRefund",
     [entryId],
-    originSubstrateAddress,
-    signer,
-    spinner,
     "Claim refund",
   );
-  spinner.succeed(`Refund #${entryId.toString()} claimed`);
-  return txHash;
 }
 
 /// Batched single-call claim for several entries. Each entry's cooldown is checked
 /// independently; the call reverts atomically if any one entry is still locked.
-export async function claimRefundsBatch(
-  clientWrapper: ReviveClientWrapper,
-  originSubstrateAddress: string,
-  signer: PolkadotSigner,
-  entryIds: bigint[],
-  spinner: Ora,
-): Promise<string> {
-  spinner.start(`Claiming ${chalk.yellow(entryIds.length)} refund entries`);
-  const txHash = await submitContractTransaction(
-    clientWrapper,
-    CONTRACTS.DOTNS_NAME_ESCROW,
+export async function claimRefundsBatch(ctx: DotnsContext, entryIds: bigint[]): Promise<string> {
+  return write(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
     0n,
     DOTNS_NAME_ESCROW_ABI,
     "claimRefundsBatch",
     [entryIds],
-    originSubstrateAddress,
-    signer,
-    spinner,
     "Claim refunds (batch)",
   );
-  spinner.succeed(`Batch claimed`);
-  return txHash;
-}
-
-/// Pretty-prints a refund entry for terminal output.
-export function formatRefundEntryLine(entry: RefundEntryView): string {
-  const claimableAt = new Date(Number(entry.availableAt) * 1000);
-  const now = Date.now();
-  const remainingSeconds = Math.max(0, Math.floor((claimableAt.getTime() - now) / 1000));
-  const status =
-    remainingSeconds === 0
-      ? chalk.green("claimable")
-      : chalk.yellow(`cooldown ${remainingSeconds}s`);
-  return `#${entry.entryId.toString()}  ${chalk.green(formatWeiAsEther(entry.amount))} PAS  ${status}  (token ${entry.tokenId.toString().slice(0, 12)}...)`;
 }

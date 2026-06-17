@@ -1,17 +1,28 @@
 import type { Abi, Address, Hex } from "viem";
-import DotnsRegistrarController from "../../abis/DotnsRegistrarController.json" assert { type: "json" };
-import DotnsRegistry from "../../abis/DotnsRegistry.json" assert { type: "json" };
-import DotnsRegistrar from "../../abis/DotnsRegistrar.json" assert { type: "json" };
-import DotnsContentResolver from "../../abis/DotnsContentResolver.json" assert { type: "json" };
-import DotnsResolver from "../../abis/DotnsResolver.json" assert { type: "json" };
-import DotnsNameEscrow from "../../abis/DotnsNameEscrow.json" assert { type: "json" };
-import PopRules from "../../abis/PopRules.json" assert { type: "json" };
-import StoreFactory from "../../abis/StoreFactory.json" assert { type: "json" };
-import LabelStore from "../../abis/LabelStore.json" assert { type: "json" };
-import UserStore from "../../abis/UserStore.json" assert { type: "json" };
-import DotnsPopController from "../../abis/DotnsPopController.json" assert { type: "json" };
+import { normaliseLabel } from "./validation";
+import DotnsRegistrarController from "../../abis/DotnsRegistrarController.json" with { type: "json" };
+import DotnsRegistry from "../../abis/DotnsRegistry.json" with { type: "json" };
+import DotnsRegistrar from "../../abis/DotnsRegistrar.json" with { type: "json" };
+import DotnsContentResolver from "../../abis/DotnsContentResolver.json" with { type: "json" };
+import DotnsResolver from "../../abis/DotnsResolver.json" with { type: "json" };
+import DotnsReverseResolver from "../../abis/DotnsReverseResolver.json" with { type: "json" };
+import DotnsPopResolver from "../../abis/DotnsPopResolver.json" with { type: "json" };
+import DotnsNameEscrow from "../../abis/DotnsNameEscrow.json" with { type: "json" };
+import PopRules from "../../abis/PopRules.json" with { type: "json" };
+import StoreFactory from "../../abis/StoreFactory.json" with { type: "json" };
+import LabelStore from "../../abis/LabelStore.json" with { type: "json" };
+import UserStore from "../../abis/UserStore.json" with { type: "json" };
+import DotnsPopController from "../../abis/DotnsPopController.json" with { type: "json" };
 
-export const PREVIEW_BASE_URL = "http://dotns.paseo.li/#/preview";
+// dot.li serves a name as a gateway subdomain: strip the .dot TLD and append the
+// gateway domain (mainnet dot.li, Paseo testnet paseo.li).
+const DOTLI_GATEWAYS = ["dot.li", "paseo.li"] as const;
+
+/** Both dot.li viewing URLs for a name, e.g. ["https://alice.dot.li", "https://alice.paseo.li"]. */
+export function dotliViewUrls(name: string): string[] {
+  const stem = normaliseLabel(name);
+  return DOTLI_GATEWAYS.map((gateway) => `https://${stem}.${gateway}`);
+}
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
 export const SUMMIT_ASSET_HUB_URL = "wss://summit-asset-hub-rpc.polkadot.io";
@@ -24,7 +35,8 @@ export const DEFAULT_BULLETIN_RPC = "wss://paseo-bulletin-next-rpc.polkadot.io";
 export const SUMMIT_BULLETIN_RPC = "wss://summit-bulletin-rpc.polkadot.io";
 export const SUMMIT_IPFS_GATEWAY_URL = "https://summit-ipfs.polkadot.io/ipfs";
 export const DEFAULT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
-export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
+// Chain MaxTransactionSize; larger single uploads must be chunked.
+export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MAX_RETRIES = 5;
 export const MAX_UPLOAD_MAX_RETRIES = 20;
 export const UPLOAD_RETRY_BASE_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as const;
@@ -40,6 +52,8 @@ export const DEFAULT_MNEMONIC =
   "bottom drive obey lake curtain smoke basket hold race lonely fit walk";
 
 export const DEFAULT_SUDO_KEY_URI = "//Alice";
+
+export const MIN_KEYSTORE_PASSWORD_LENGTH = 6;
 
 // The Bulletin Authorizer that grants storage quota. //Eve is seeded into
 // AllowedAuthorizers on the bulletin testnet and dev runtimes (the same key the
@@ -67,6 +81,8 @@ export const DOTNS_REGISTRY_ABI = DotnsRegistry as Abi;
 export const DOTNS_REGISTRAR_ABI = DotnsRegistrar as Abi;
 export const DOTNS_CONTENT_RESOLVER_ABI = DotnsContentResolver as Abi;
 export const DOTNS_RESOLVER_ABI = DotnsResolver as Abi;
+export const DOTNS_REVERSE_RESOLVER_ABI = DotnsReverseResolver as Abi;
+export const DOTNS_POP_RESOLVER_ABI = DotnsPopResolver as Abi;
 export const DOTNS_NAME_ESCROW_ABI = DotnsNameEscrow as Abi;
 export const POP_RULES_ABI = PopRules as Abi;
 export const STORE_FACTORY_ABI = StoreFactory as Abi;
@@ -146,6 +162,12 @@ export type DotnsContractAddresses = {
   /** Forward resolution resolver */
   DOTNS_RESOLVER: Address;
 
+  /** Reverse resolution resolver - maps an address to its primary name */
+  DOTNS_REVERSE_RESOLVER: Address;
+
+  /** PoP resolver - holds per-node chat keys set at PoP-Full registration */
+  DOTNS_POP_RESOLVER: Address;
+
   /** Content hash resolver - stores IPFS CIDs */
   DOTNS_CONTENT_RESOLVER: Address;
 
@@ -177,8 +199,14 @@ export type DotnsEnvironmentConfig = {
   rpc: string | null;
   blockExplorerUrl: string;
   /**
+   * Base URL of the dotns web app's CID preview route, e.g.
+   * `https://dotns.paseo.li/#/preview`. `null` for environments with no web app;
+   * preview-link helpers throw a clear error rather than emit a wrong-network link.
+   */
+  previewBaseUrl: string | null;
+  /**
    * Contract address book. `null` when contracts have not been deployed to (or
-   * recorded for) this environment. `CONTRACTS` accesses throw in that case.
+   * recorded for) this environment; createDotnsContext throws in that case.
    */
   contracts: DotnsContractAddresses | null;
   /**
@@ -208,11 +236,14 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     aliases: ["paseo-v2", "paseo_v2", "v2", "next", "next-v2"],
     rpc: RPC_ENDPOINTS[0],
     blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
+    previewBaseUrl: "https://dotns.paseo.li/#/preview",
     contracts: {
       DOTNS_REGISTRAR: "0xf7Ad3F44F316C73E4a2b46b1ed48d376bCc9E639" as Address,
       DOTNS_REGISTRAR_CONTROLLER: "0x674b705268DAE369F0a7BE9cbaCDb928b8BA38C2" as Address,
       DOTNS_REGISTRY: "0xa1b2b939E82b2ecE55Bd8a0E283818BfC1CA6CDc" as Address,
       DOTNS_RESOLVER: "0xA8988eA083174ea94Ed1D686f0F073a10f65598D" as Address,
+      DOTNS_REVERSE_RESOLVER: "0x259B9D8199c29d2EF132264ad05f8F74F3115A2E" as Address,
+      DOTNS_POP_RESOLVER: "0xC9D511Eb80fD8B745DC5Be59aCF5d700271bC01e" as Address,
       DOTNS_CONTENT_RESOLVER: "0x8A26480b0B5Df3d4D9b95adc24a5Ecb33A5b8F64" as Address,
       STORE_FACTORY: "0x692047C1477a017F287488E1c85F96Ca28C23fD8" as Address,
       DOTNS_RULES: "0x4909bFb3f4Fd86244abD6430fDfA0Ce5C91aD0c4" as Address,
@@ -230,11 +261,14 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     aliases: ["previewnet", "preview-net", "preview", "ppn"],
     rpc: PREVIEWNET_ASSET_HUB_URL,
     blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
+    previewBaseUrl: null,
     contracts: {
       DOTNS_REGISTRAR: "0x061273AeF34e8ab9Ca08E199d7440E2639Fc2088" as Address,
       DOTNS_REGISTRAR_CONTROLLER: "0xC0c21ca6302884572E61d69D5bf3E271Acf39B23" as Address,
       DOTNS_REGISTRY: "0x5622CA75C75726Da13ae46C69127C07c87538633" as Address,
       DOTNS_RESOLVER: "0x823f39E7a4126669be53211FFbCF27e55b3274C6" as Address,
+      DOTNS_REVERSE_RESOLVER: "0xA347059298aA171b3E744538F7043e9AAaAa95E0" as Address,
+      DOTNS_POP_RESOLVER: "0xeD11Bb5064fAAcb0A91e52dac2272E89856F2F6a" as Address,
       DOTNS_CONTENT_RESOLVER: "0xBD003d5Dd04E68aC60d529a46AEfBdEf8941868C" as Address,
       STORE_FACTORY: "0x4BEFaB5de968183524b1eBd2FAec9C68Cdc696Fd" as Address,
       DOTNS_RULES: "0xF209a15e8a10D208bb4d3e3c56D9EB73a5934C26" as Address,
@@ -256,11 +290,15 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     rpc: SUMMIT_ASSET_HUB_URL,
     // TODO(summit): set the real block explorer URL once known.
     blockExplorerUrl: "",
+    // No Summit-hosted dotns preview gateway yet; set once one exists.
+    previewBaseUrl: null,
     contracts: {
       DOTNS_REGISTRAR: "0xf3969bCBE60463302306663C62A6A8ef91ab9aA5" as Address,
       DOTNS_REGISTRAR_CONTROLLER: "0xA68a5b2A6be6d014be0dB07c0ed4bacc4A6A570A" as Address,
       DOTNS_REGISTRY: "0xFb7AB7E142ED0248D77198CA8722D67C1930D783" as Address,
       DOTNS_RESOLVER: "0xC7f1C3B16BFd0c5910EE37a4a2033f4506AcE94d" as Address,
+      DOTNS_REVERSE_RESOLVER: "0x5aa444C6cbA9bd703d1a0B5E5C643FB886F80bB4" as Address,
+      DOTNS_POP_RESOLVER: "0x03FD2ed7B1b848c59A2428224162dE00D11a8133" as Address,
       DOTNS_CONTENT_RESOLVER: "0xf110e5799c3f0adb8ED885C02c45Ecfe7fD86226" as Address,
       STORE_FACTORY: "0x2947af3CBFb45b89610524a25921C32cB65C4C39" as Address,
       DOTNS_RULES: "0x6331e51C9AfC73BfE12562fd160BA2c66A73f984" as Address,
@@ -308,31 +346,3 @@ export function setActiveDotnsEnvironment(value?: string): DotnsEnvironmentConfi
 export function getActiveDotnsEnvironment(): DotnsEnvironmentConfig {
   return DOTNS_ENVIRONMENTS[activeDotnsEnvironment];
 }
-
-function requireContracts(): DotnsContractAddresses {
-  const environment = getActiveDotnsEnvironment();
-  if (!environment.contracts) {
-    throw new Error(
-      `Contract addresses for environment '${environment.id}' are not configured. Use --env paseo-v2 or set DOTNS_ENV=paseo-v2.`,
-    );
-  }
-  return environment.contracts;
-}
-
-export const CONTRACTS = new Proxy({} as DotnsContractAddresses, {
-  get(_target, property: string | symbol) {
-    if (typeof property === "symbol") return undefined;
-    return requireContracts()[property as keyof DotnsContractAddresses];
-  },
-  ownKeys() {
-    return Reflect.ownKeys(requireContracts());
-  },
-  getOwnPropertyDescriptor(_target, property: string | symbol) {
-    if (typeof property === "symbol") return undefined;
-    return {
-      enumerable: true,
-      configurable: true,
-      value: requireContracts()[property as keyof DotnsContractAddresses],
-    };
-  },
-}) as DotnsContractAddresses;

@@ -1,7 +1,9 @@
 import type { Paseo } from "@polkadot-api/descriptors";
 import { Binary, type PolkadotSigner, type TypedApi } from "polkadot-api";
+import { decodeAddress } from "@polkadot/util-crypto";
 import { isAddress, type Address, type Hash } from "viem";
 import type { ReviveCallResult, SubstrateWeight, TransactionStatus } from "../types/types";
+import { ensureError, formatDispatchError } from "../utils/formatting";
 
 export type PolkadotApiClient = TypedApi<Paseo>;
 
@@ -99,31 +101,15 @@ function unwrapExecutionResult(rawResult: any): {
   return { ok: null, err: rawResult, successFlag: null };
 }
 
-function formatDispatchError(dispatchError: any): string {
-  if (!dispatchError) return "Unknown error";
-  if (typeof dispatchError === "string") return dispatchError;
-  if (dispatchError.type === "Module") {
-    const moduleError = dispatchError.value as {
-      type: string;
-      value?: { type: string };
-    };
-    return `Module error: ${moduleError.type}.${moduleError.value?.type || "Unknown"}`;
-  }
-  if (dispatchError.type) return dispatchError.type;
+// Compares two SS58 addresses by their decoded public key, so a differing network
+// prefix does not register as a different account.
+function isSameSubstrateAccount(a: string, b: string): boolean {
   try {
-    return JSON.stringify(dispatchError);
+    const decodedA = decodeAddress(a);
+    const decodedB = decodeAddress(b);
+    return decodedA.length === decodedB.length && decodedA.every((byte, i) => byte === decodedB[i]);
   } catch {
-    return String(dispatchError);
-  }
-}
-
-function ensureError(error: unknown): Error {
-  if (error instanceof Error) return error;
-  if (typeof error === "string") return new Error(error);
-  try {
-    return new Error(JSON.stringify(error));
-  } catch {
-    return new Error(String(error));
+    return a === b;
   }
 }
 
@@ -150,6 +136,25 @@ export class ReviveClientWrapper {
 
   async getSubstrateAddress(evmAddress: Address): Promise<string> {
     return await this.client.apis.ReviveApi.account_id(Binary.fromHex(evmAddress));
+  }
+
+  // Resolves the caller's own EVM address and confirms it round-trips back to the
+  // same account. An account that is not address-mapped resolves to a colliding or
+  // fallback H160 owned by someone else; querying it would silently return another
+  // account's data, so fail loudly instead.
+  async resolveOwnEvmAddress(substrateAddress: string): Promise<Address> {
+    const evmAddress = await this.getEvmAddress(substrateAddress);
+    if (isAddress(substrateAddress)) return evmAddress;
+
+    const roundTrip = await this.getSubstrateAddress(evmAddress);
+    if (!isSameSubstrateAccount(roundTrip, substrateAddress)) {
+      throw new Error(
+        `Account ${substrateAddress} is not address-mapped on this chain: its EVM address ` +
+          `${evmAddress} belongs to ${roundTrip}. Run \`dotns account map\` for this account ` +
+          `before reading its on-chain data.`,
+      );
+    }
+    return evmAddress;
   }
 
   async performDryRunCall(
@@ -253,6 +258,7 @@ export class ReviveClientWrapper {
   async ensureAccountMapped(
     substrateAddress: string,
     signer: PolkadotSigner,
+    signal?: AbortSignal,
   ): Promise<boolean | undefined> {
     if (isAddress(substrateAddress)) {
       throw new Error("ensureAccountMapped requires SS58 Substrate address, not EVM H160 address");
@@ -269,7 +275,13 @@ export class ReviveClientWrapper {
     const mappingExtrinsic = this.client.tx.Revive.map_account();
 
     try {
-      await this.signAndSubmitExtrinsic(mappingExtrinsic, signer, () => {}, substrateAddress);
+      await this.signAndSubmitExtrinsic(
+        mappingExtrinsic,
+        signer,
+        () => {},
+        substrateAddress,
+        signal,
+      );
       this.mappedAccounts.add(substrateAddress);
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
@@ -376,8 +388,10 @@ export class ReviveClientWrapper {
     statusCallback: (status: TransactionStatus) => void,
     signal?: AbortSignal,
   ): Promise<Hash> {
-    await this.ensureAccountMapped(signerSubstrateAddress, signer);
+    if (signal?.aborted) throw new Error("Transaction aborted");
+    await this.ensureAccountMapped(signerSubstrateAddress, signer, signal);
 
+    if (signal?.aborted) throw new Error("Transaction aborted");
     const gasEstimate = await this.estimateGasForCall(
       signerSubstrateAddress,
       contractAddress,

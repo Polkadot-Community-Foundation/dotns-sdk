@@ -6,14 +6,9 @@ import ContentDisplay from "../components/preview/ContentDisplay.vue";
 import ErrorDisplay from "../components/preview/ErrorDisplay.vue";
 import LandingPage from "../components/preview/LandingPage.vue";
 import { decodeFromPreview } from "@/lib/preview";
-import { destroySharedHeliaClient } from "@/lib/heliaClient";
-import {
-  fetchCidFromP2P,
-  fetchCidFromGateways,
-  IPFS_GATEWAYS,
-  IpfsContentTooLargeError,
-  MAX_INLINE_PREVIEW_BYTES,
-} from "@/lib/ipfs";
+import { getPreviewContent, clearPreviewContent } from "@/lib/previewCache";
+import { fetchCidContentViaHost } from "@/lib/hostPreimage";
+import { IpfsContentTooLargeError, MAX_INLINE_PREVIEW_BYTES } from "@/lib/ipfs";
 
 function detectMimeType(data: Uint8Array): string {
   if (data.length < 4) return "application/octet-stream";
@@ -42,12 +37,6 @@ function detectMimeType(data: Uint8Array): string {
   }
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 const route = useRoute();
 
 const isLoading = ref(false);
@@ -60,7 +49,6 @@ const resolvedGatewayUrl = ref<string | null>(null);
 const previewUnavailableReason = ref<string | null>(null);
 let previewRequestId = 0;
 let activeFetchController: AbortController | null = null;
-let mountTimer: ReturnType<typeof setTimeout> | null = null;
 
 const encodedParam = computed(() => route.params.encoded as string | undefined);
 
@@ -90,13 +78,6 @@ function resetResolvedContent(): void {
   previewUnavailableReason.value = null;
 }
 
-function clearMountTimer(): void {
-  if (mountTimer) {
-    clearTimeout(mountTimer);
-    mountTimer = null;
-  }
-}
-
 function abortActiveFetch(): void {
   if (activeFetchController) {
     activeFetchController.abort();
@@ -105,15 +86,13 @@ function abortActiveFetch(): void {
 }
 
 function cleanupPreviewTransport(): void {
-  clearMountTimer();
   abortActiveFetch();
-  void destroySharedHeliaClient().catch(() => {
-    // best-effort teardown
-  });
 }
 
 async function fetchContent() {
   if (!cid.value) {
+    error.value = "This preview link is malformed.";
+    isLoading.value = false;
     return;
   }
 
@@ -129,53 +108,34 @@ async function fetchContent() {
   try {
     let blob: Blob | null = null;
     let type = "application/octet-stream";
-    let resolvedUrl = "";
     let blockedReason: string | null = null;
 
-    loadingMessage.value = "Fetching content from IPFS gateways...";
-    try {
-      const resolvedContent = await fetchCidFromGateways(cid.value, {
-        signal: fetchController.signal,
-        maxBytes: MAX_INLINE_PREVIEW_BYTES,
-      });
-      type = resolvedContent.contentType;
-      blob = resolvedContent.blob;
-      resolvedUrl = resolvedContent.url;
-    } catch (gatewayError) {
-      if (gatewayError instanceof IpfsContentTooLargeError) {
-        blockedReason = gatewayError.message;
-        type = gatewayError.contentType || type;
-        resolvedUrl = gatewayError.url;
-      } else {
-        console.warn("[PreviewView] Gateway fetch failed:", gatewayError);
-      }
-    }
-
-    if (requestId !== previewRequestId || fetchController.signal.aborted) {
-      return;
+    // Post-upload hand-off: if we still hold the uploaded bytes, render them
+    // directly — no gateway or host round-trip needed.
+    const cached = getPreviewContent(cid.value);
+    if (cached) {
+      blob = cached.blob;
+      type =
+        cached.contentType && cached.contentType !== "application/octet-stream"
+          ? cached.contentType
+          : detectMimeType(new Uint8Array(await cached.blob.slice(0, 512).arrayBuffer()));
     }
 
     if (!blob && !blockedReason) {
-      loadingMessage.value = "Connecting to Bulletin P2P...";
+      loadingMessage.value = "Fetching content via the host...";
       try {
-        const p2pResult = await fetchCidFromP2P(cid.value, {
+        const bytes = await fetchCidContentViaHost(cid.value, {
           signal: fetchController.signal,
           maxBytes: MAX_INLINE_PREVIEW_BYTES,
         });
-        type = detectMimeType(p2pResult.sniffBytes);
-        blob = p2pResult.blob.slice(0, p2pResult.size, type);
-        resolvedUrl = `${IPFS_GATEWAYS[0]}/ipfs/${cid.value}/`;
-      } catch (p2pError) {
-        if (
-          p2pError instanceof Error &&
-          p2pError.message.includes(
-            `Content exceeds preview limit of ${MAX_INLINE_PREVIEW_BYTES} bytes`,
-          )
-        ) {
-          blockedReason = `Preview unavailable: content is above the inline preview limit of ${formatBytes(MAX_INLINE_PREVIEW_BYTES)}.`;
-          resolvedUrl = `${IPFS_GATEWAYS[0]}/ipfs/${cid.value}/`;
+        type = detectMimeType(bytes);
+        blob = new Blob([bytes as BlobPart], { type });
+      } catch (hostError) {
+        if (hostError instanceof IpfsContentTooLargeError) {
+          blockedReason = hostError.message;
+          type = hostError.contentType || type;
         } else {
-          console.warn("[PreviewView] P2P fetch failed:", p2pError);
+          console.warn("[PreviewView] Host content fetch failed:", hostError);
         }
       }
     }
@@ -190,19 +150,19 @@ async function fetchContent() {
     if (blob) {
       contentUrl.value = URL.createObjectURL(blob);
     } else if (blockedReason) {
-      contentUrl.value = resolvedUrl || `${IPFS_GATEWAYS[0]}/ipfs/${cid.value}/`;
+      contentUrl.value = "";
     } else {
-      error.value =
-        "Content not found on IPFS gateways. It may still be propagating from Bulletin chain.";
+      error.value = "Content not retrievable via the host. It may still be propagating.";
     }
-    resolvedGatewayUrl.value = resolvedUrl;
+    // Shareable link to the pre-allowed Parity gateway (user-clicked, not an
+    // auto-fetch) — content itself renders from the local host-fetched blob above.
+    resolvedGatewayUrl.value = `https://paseo-bulletin-next-ipfs.polkadot.io/ipfs/${cid.value}`;
   } catch (fetchError) {
     if (requestId !== previewRequestId || fetchController.signal.aborted) {
       return;
     }
     console.warn("[PreviewView] Content fetch failed:", fetchError);
-    error.value =
-      "Content not found on IPFS gateways. It may still be propagating from Bulletin chain.";
+    error.value = "Content not retrievable via the host. It may still be propagating.";
   } finally {
     if (activeFetchController === fetchController) {
       activeFetchController = null;
@@ -214,22 +174,23 @@ async function fetchContent() {
 }
 
 function handleRetry() {
-  clearMountTimer();
   fetchContent();
 }
 
+// immediate so the fetch runs on first mount AND when the param changes on a
+// reused component instance (e.g. /upload → /preview/:encoded), which onMounted
+// alone would miss.
 watch(
   encodedParam,
   () => {
     if (encodedParam.value) {
-      clearMountTimer();
       fetchContent();
     } else {
       cleanupPreviewTransport();
       resetResolvedContent();
     }
   },
-  { immediate: false },
+  { immediate: true },
 );
 
 function handlePageHide(): void {
@@ -238,19 +199,13 @@ function handlePageHide(): void {
 
 onMounted(() => {
   window.addEventListener("pagehide", handlePageHide);
-  if (encodedParam.value) {
-    mountTimer = setTimeout(() => {
-      mountTimer = null;
-      fetchContent();
-    }, 800);
-    isLoading.value = true;
-  }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("pagehide", handlePageHide);
   cleanupPreviewTransport();
   resetResolvedContent();
+  clearPreviewContent();
 });
 </script>
 
@@ -278,6 +233,14 @@ onBeforeUnmount(() => {
         :gateway-url="gatewayUrl"
         :preview-unavailable-reason="previewUnavailableReason"
         key="content"
+      />
+
+      <ErrorDisplay
+        v-else-if="encodedParam"
+        :message="error || 'Preview unavailable.'"
+        :cid="cid || ''"
+        key="fallback"
+        @retry="handleRetry"
       />
     </Transition>
   </div>

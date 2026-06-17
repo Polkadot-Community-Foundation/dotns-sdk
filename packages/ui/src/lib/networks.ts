@@ -1,13 +1,11 @@
-import { getAddress, zeroAddress } from "viem";
-import type { Deployment, NetworkConfig } from "@/type";
+import type { NetworkConfig } from "@/type";
 
-/**
- * Network Configuration
- *
- * Supported blockchain networks and their deployment addresses
- */
+// After the v2 ContractManager migration, contract addresses live in cdm.json.
+// This file only carries chain-level metadata used by the UI for display
+// (chainName, native currency, block explorer URL) and runtime configuration
+// (RPC URL for non-contract chain reads).
 
-export const SUPPORTED_NETWORKS: Record<number, NetworkConfig & Partial<Deployment>> = {
+export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   420420417: {
     chainId: 420420417,
     chainName: "Summit Asset Hub",
@@ -16,19 +14,8 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig & Partial<Deployme
       symbol: "SUM",
       decimals: 18,
     },
-    rpcUrls: ["wss://summit-asset-hub-rpc.polkadot.io"],
     // TODO(summit): set the block explorer URL once known.
     blockExplorerUrls: [],
-    dotnsRegistry: "0xFb7AB7E142ED0248D77198CA8722D67C1930D783",
-    dotnsRegistrarController: "0xA68a5b2A6be6d014be0dB07c0ed4bacc4A6A570A",
-    dotnsResolver: "0xC7f1C3B16BFd0c5910EE37a4a2033f4506AcE94d",
-    dotnsReverseResolver: "0x5aa444C6cbA9bd703d1a0B5E5C643FB886F80bB4",
-    storeFactory: "0x2947af3CBFb45b89610524a25921C32cB65C4C39",
-    dotnsRegistrar: "0xf3969bCBE60463302306663C62A6A8ef91ab9aA5",
-    multiCall: getAddress("0x1C1044BEa5bDe0F435436bB52A8340fBE1D59847"),
-    popOracle: "0x6331e51C9AfC73BfE12562fd160BA2c66A73f984",
-    dotnsContentResolver: "0xf110e5799c3f0adb8ED885C02c45Ecfe7fD86226",
-    ethRPCURL: "https://summit-asset-hub-rpc.polkadot.io",
   },
 };
 
@@ -47,10 +34,11 @@ export const MAX_WEIGHT = {
 };
 
 /**
- * Get the first deployed network from SUPPORTED_NETWORKS
- *
- * @returns The first network with a deployed dotnsRegistry, or undefined
+ * Get the first network in SUPPORTED_NETWORKS. Kept as a helper for callers
+ * that need a default. Historically named "deployed" when contract addresses
+ * lived here. Returns the only configured network today.
  */
-export function getFirstDeployedNetwork(): (NetworkConfig & Partial<Deployment>) | undefined {
-  return Object.values(SUPPORTED_NETWORKS).find((network) => network.dotnsRegistry !== zeroAddress);
+export function getFirstDeployedNetwork(): NetworkConfig | undefined {
+  const networks = Object.values(SUPPORTED_NETWORKS);
+  return networks[0];
 }

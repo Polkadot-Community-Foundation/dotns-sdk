@@ -12,35 +12,11 @@ export default defineConfig({
       buffer: "buffer/",
     },
 
-    dedupe: [
-      "polkadot-api",
-      "@polkadot-api/descriptors",
-      "@polkadot-api/substrate-bindings",
-      "@polkadot-api/metadata-builders",
-      "@polkadot-api/polkadot-sdk-compat",
-      "@polkadot-api/signer",
-      "@polkadot-api/pjs-signer",
-
-      "@polkadot/api",
-      "@polkadot/types",
-      "@polkadot/util",
-      "@polkadot/util-crypto",
-      "@polkadot/extension-dapp",
-      "@polkadot/extension-inject",
-    ],
+    dedupe: ["@polkadot/util", "@polkadot/util-crypto", "polkadot-api"],
   },
 
   optimizeDeps: {
     include: ["buffer", "@ipld/dag-pb", "ipfs-unixfs"],
-    exclude: [
-      "polkadot-api",
-      "@polkadot-api/descriptors",
-      "@polkadot-api/substrate-bindings",
-      "@polkadot-api/metadata-builders",
-      "@polkadot-api/polkadot-sdk-compat",
-      "@polkadot-api/signer",
-      "@polkadot-api/pjs-signer",
-    ],
   },
 
   build: {

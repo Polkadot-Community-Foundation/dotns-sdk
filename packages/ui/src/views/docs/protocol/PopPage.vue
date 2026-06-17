@@ -4,10 +4,10 @@
       <p class="text-sm font-medium text-dot-accent mb-2">Protocol</p>
       <h1 class="text-4xl font-serif text-dot-text-primary mb-4">Proof of Personhood</h1>
       <p class="text-lg text-dot-text-secondary leading-relaxed">
-        Proof of Personhood (PoP) is how DotNS ensures
-        <span class="text-dot-text-primary font-medium">fair name distribution</span>. It stops a
-        single person or bot from hoarding thousands of names, so shorter, more desirable names are
-        priced fairly based on who is registering them.
+        Proof of Personhood (PoP) is how DotNS keeps
+        <span class="text-dot-text-primary font-medium">name distribution fair</span>. It stops one
+        person or bot from hoarding thousands of names, and gates the shorter, more desirable names
+        behind verification rather than price.
       </p>
     </div>
 
@@ -16,13 +16,13 @@
       <p class="text-dot-text-secondary leading-relaxed">
         PoP verifies that a person registering a name is a unique human, not a bot or a collection
         of fake wallets. DotNS connects to on-chain identity systems to place users into tiers. Each
-        tier unlocks different name lengths and pricing &mdash; verified humans get access to
-        shorter names and lower (or zero) registration fees.
+        tier unlocks a different class of name &mdash; verified humans get access to shorter stems
+        and register without a deposit.
       </p>
       <DocCallout variant="info" title="Why does this matter?">
         Without this protection, a single entity could register every short .dot name and resell
-        them at inflated prices. PoP keeps desirable names available to real users at fair prices
-        and the namespace healthy and accessible.
+        them at inflated prices. PoP keeps desirable names available to real users and the namespace
+        healthy and accessible.
       </DocCallout>
     </div>
 
@@ -95,81 +95,69 @@
         </table>
       </div>
       <DocCallout variant="warning" title="Invalid names">
-        Names with more than 2 trailing digits are considered
-        <span class="font-semibold">invalid</span> and cannot be registered through any path. This
-        prevents numeric squatting patterns like <span class="font-mono">alice12345</span>.
+        A name's stem must carry either no trailing digits or exactly two. A single trailing digit
+        or more than two are <span class="font-semibold">invalid</span> and cannot be registered
+        through any path. This prevents numeric squatting patterns like
+        <span class="font-mono">alice12345</span>.
       </DocCallout>
     </div>
 
     <div class="space-y-4">
-      <h2 class="text-xl font-semibold text-dot-text-primary">Pricing (NoStatus Tier)</h2>
+      <h2 class="text-xl font-semibold text-dot-text-primary">Pricing (NoStatus tier)</h2>
       <p class="text-dot-text-secondary leading-relaxed">
-        Users without PoP verification (NoStatus) pay a length-based registration fee. The shorter
-        the name, the higher the price. Users with PoP verification (PopLite or PopFull) pay
-        <span class="text-dot-text-primary font-medium">zero registration fees</span>.
+        Registering a NoStatus-tier name (a stem of nine characters or more) costs a single flat
+        deposit, the same amount whatever the name's length. The deposit is refundable: it is bound
+        to the name, travels with it on transfer, and unlocks only when the holder releases the name
+        back to escrow. Verified users (PopLite or PopFull) pay
+        <span class="text-dot-text-primary font-medium">nothing</span> to register the names their
+        tier allows.
       </p>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm border border-dot-border rounded-lg overflow-hidden">
-          <thead>
-            <tr class="bg-dot-surface-secondary">
-              <th class="text-left px-4 py-3 text-dot-text-tertiary font-medium">Name Length</th>
-              <th class="text-left px-4 py-3 text-dot-text-tertiary font-medium">Price (DOT)</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-dot-border">
-            <tr v-for="price in pricingTable" :key="price.length" class="bg-dot-surface">
-              <td class="px-4 py-3 font-mono text-dot-text-primary text-xs">{{ price.length }}</td>
-              <td class="px-4 py-3 font-mono text-dot-accent text-xs">{{ price.price }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <DocCallout variant="info" title="Length does not change the price">
+        A shorter stem is not cheaper or dearer &mdash; it simply requires a higher tier. A stem of
+        five characters or fewer is governance-reserved, six to eight needs proof of personhood, and
+        nine or more is open to anyone for the flat NoStatus deposit.
+      </DocCallout>
       <DocCallout variant="tip" title="Free for verified users">
-        PoP-verified users (PopLite and PopFull) pay <strong>0 DOT</strong> for registration. Get
-        verified to get free name registration for all names your tier allows.
+        PopLite and PopFull users pay <strong>nothing</strong> to register any name their tier
+        allows. Verification, not payment, is what unlocks the shorter stems.
       </DocCallout>
     </div>
 
     <div class="space-y-4">
-      <h2 class="text-xl font-semibold text-dot-text-primary">Fee Formula</h2>
+      <h2 class="text-xl font-semibold text-dot-text-primary">How the deposit is priced</h2>
       <p class="text-dot-text-secondary leading-relaxed">
-        The <span class="font-mono text-dot-accent">PopRules</span> contract computes registration
-        prices using a stepped linear formula. The
-        <span class="font-mono text-dot-accent">startingPrice</span> (currently 0.002 DOT) is set at
-        deployment and can be updated by governance.
+        The <span class="font-mono text-dot-accent">PopRules</span> contract prices a name from the
+        caller's tier, not its length. The flat amount is
+        <span class="font-mono text-dot-accent">startingPrice</span>, set at deployment and
+        updatable by governance.
       </p>
       <div
-        class="p-4 rounded-lg border border-dot-border bg-dot-surface font-mono text-xs leading-relaxed text-dot-text-secondary whitespace-pre"
+        class="p-4 rounded-lg border border-dot-border bg-dot-surface font-mono text-xs leading-relaxed text-dot-text-secondary space-y-1"
       >
-        price(n) = 0 if n &lt; 9 (PoP-gated) = startingPrice &times; (15 &minus; n) if 9 &le; n &le;
-        14 = startingPrice &divide; 2 if n &ge; 15 (floor)
-      </div>
-
-      <div class="space-y-2">
-        <p class="text-sm font-medium text-dot-text-primary">Worked example</p>
-        <div
-          class="p-4 rounded-lg border border-dot-border bg-dot-surface font-mono text-xs leading-relaxed text-dot-text-secondary whitespace-pre"
-        >
-          startingPrice = 0.002 DOT name = "domainname" &rarr; length = 10 multiplier = 15 &minus;
-          10 = 5 price = 0.002 &times; 5 = <span class="text-dot-accent font-bold">0.010 DOT</span>
-        </div>
+        <p>price = 0 &mdash; PopLite / PopFull users</p>
+        <p>price = startingPrice (flat) &mdash; NoStatus user on a NoStatus-tier name</p>
       </div>
 
       <DocCallout variant="info" title="Design rationale">
         <ul class="list-disc list-inside space-y-1 text-sm">
-          <li>Shorter names cost more, which discourages name hoarding.</li>
-          <li>The floor price keeps long names affordable but not free.</li>
-          <li>PoP bypasses fees entirely, preventing abuse through identity verification.</li>
+          <li>
+            A flat per-name deposit caps Sybil cost at one deposit per live NoStatus name, however
+            often names change hands.
+          </li>
+          <li>The deposit is refundable on release to escrow, not a burned fee.</li>
+          <li>
+            Proof of personhood waives the deposit entirely, so verified humans register free.
+          </li>
           <li>
             <span class="font-mono text-dot-accent">startingPrice</span> is upgradeable &mdash;
-            governance can adjust the slope without redeploying.
+            governance can adjust it without redeploying.
           </li>
         </ul>
       </DocCallout>
     </div>
 
-    <TryItSection title="Try it — Pricing curve">
-      <TryPricingCurve />
+    <TryItSection title="Try it — Will a transfer pay a fee?">
+      <TryTransferMatrix />
     </TryItSection>
 
     <TryItSection title="Try it — Classify a name">
@@ -195,27 +183,31 @@
         <p class="text-sm font-medium text-dot-text-primary">Examples</p>
         <div class="space-y-2 text-xs font-mono text-dot-text-secondary">
           <p>
-            <span class="text-dot-accent">alice</span> &rarr; baselen=5, digits=0 &rarr;
+            <span class="text-dot-accent">alice</span> &rarr; stemlen=5, digits=0 &rarr;
             <span class="text-warning">Reserved</span>
           </p>
           <p>
-            <span class="text-dot-accent">charlie</span> &rarr; baselen=7, digits=0 &rarr;
+            <span class="text-dot-accent">charlie</span> &rarr; stemlen=7, digits=0 &rarr;
             <span class="text-success">PopFull</span>
           </p>
           <p>
-            <span class="text-dot-accent">charlie42</span> &rarr; baselen=7, digits=2 &rarr;
+            <span class="text-dot-accent">charlie42</span> &rarr; stemlen=7, digits=2 &rarr;
             <span class="text-dot-accent">PopLite</span>
           </p>
           <p>
-            <span class="text-dot-accent">longername</span> &rarr; baselen=10, digits=0 &rarr;
-            <span class="text-success">PopFull</span>
-          </p>
-          <p>
-            <span class="text-dot-accent">longername99</span> &rarr; baselen=10, digits=2 &rarr;
+            <span class="text-dot-accent">longername</span> &rarr; stemlen=10, digits=0 &rarr;
             <span class="text-dot-text-secondary">NoStatus</span>
           </p>
           <p>
-            <span class="text-dot-accent">name12345</span> &rarr; baselen=4, digits=5 &rarr;
+            <span class="text-dot-accent">longername99</span> &rarr; stemlen=10, digits=2 &rarr;
+            <span class="text-dot-text-secondary">NoStatus</span>
+          </p>
+          <p>
+            <span class="text-dot-accent">charlie1</span> &rarr; stemlen=7, digits=1 &rarr;
+            <span class="text-error">Invalid (one trailing digit)</span>
+          </p>
+          <p>
+            <span class="text-dot-accent">charlie123</span> &rarr; stemlen=7, digits=3 &rarr;
             <span class="text-error">Invalid (&gt;2 digits)</span>
           </p>
         </div>
@@ -254,36 +246,36 @@ import DocCodeBlock from "@/components/docs/DocCodeBlock.vue";
 import TryItSection from "@/components/docs/TryItSection.vue";
 import TryClassifyName from "@/components/docs/interactive/TryClassifyName.vue";
 import TryPopStatus from "@/components/docs/interactive/TryPopStatus.vue";
-import TryPricingCurve from "@/components/docs/interactive/TryPricingCurve.vue";
+import TryTransferMatrix from "@/components/docs/interactive/TryTransferMatrix.vue";
 
 const tiers = [
   {
     name: "NoStatus",
     description:
-      "Default tier for unverified users. Can register longer names with trailing digits, but must pay a length-based fee.",
+      "Default tier for unverified users. Can register names with a stem of nine characters or more, for a single flat refundable deposit.",
     requires: "No verification needed",
-    pricing: "Length-based fee (0.001 - 0.012 DOT)",
-    names: "9+ char base with 2 trailing digits",
+    pricing: "Flat refundable deposit (startingPrice)",
+    names: "9+ char stem, with no trailing digits or exactly two",
     borderClass: "border-dot-border bg-dot-surface",
     dotClass: "bg-dot-text-tertiary",
   },
   {
     name: "PopLite",
     description:
-      "Basic proof of personhood. Grants access to names with 6-8 character base and 2 trailing digits at zero cost.",
+      "Basic proof of personhood. Grants access to names with a 6-8 character stem and exactly two trailing digits at zero cost.",
     requires: "Basic PoP verification",
     pricing: "Free (0 DOT)",
-    names: "6-8 char base with 2 trailing digits",
+    names: "6-8 char stem with exactly two trailing digits",
     borderClass: "border-dot-accent/30 bg-dot-accent-soft",
     dotClass: "bg-dot-accent",
   },
   {
     name: "PopFull",
     description:
-      "Full proof of personhood. Grants access to premium names with 6+ character base and no trailing digits at zero cost.",
+      "Full proof of personhood. Grants access to premium names with a 6-8 character stem and no trailing digits at zero cost.",
     requires: "Full PoP verification",
     pricing: "Free (0 DOT)",
-    names: "6+ char base, no trailing digits",
+    names: "6-8 char stem, no trailing digits",
     borderClass: "border-success/30 bg-success/5",
     dotClass: "bg-success",
   },
@@ -317,7 +309,7 @@ const classificationRules = [
   {
     id: 3,
     baseLen: "6 - 8",
-    digits: "1 - 2",
+    digits: "exactly 2",
     classification: "PopLite",
     badgeClass: "bg-dot-accent/10 text-dot-accent",
   },
@@ -325,47 +317,37 @@ const classificationRules = [
     id: 4,
     baseLen: ">= 9",
     digits: "0",
-    classification: "PopFull",
-    badgeClass: "bg-success/10 text-success",
+    classification: "NoStatus",
+    badgeClass: "bg-dot-surface-secondary text-dot-text-secondary",
   },
   {
     id: 5,
     baseLen: ">= 9",
-    digits: "1 - 2",
+    digits: "exactly 2",
     classification: "NoStatus",
     badgeClass: "bg-dot-surface-secondary text-dot-text-secondary",
   },
   {
     id: 6,
     baseLen: "any",
-    digits: "> 2",
+    digits: "1, or > 2",
     classification: "Invalid",
     badgeClass: "bg-error/10 text-error",
   },
 ];
 
-const pricingTable = [
-  { length: "9 characters", price: "0.012 DOT" },
-  { length: "10 characters", price: "0.010 DOT" },
-  { length: "11 characters", price: "0.008 DOT" },
-  { length: "12 characters", price: "0.006 DOT" },
-  { length: "13 characters", price: "0.004 DOT" },
-  { length: "14 characters", price: "0.002 DOT" },
-  { length: ">= 15 characters", price: "0.001 DOT" },
-];
-
 const classificationCode = `// PopRules classification logic (simplified)
 function classify(string calldata label) external pure returns (Status) {
-    (uint256 baselen, uint256 trailingDigits) = _analyse(label);
+    (uint256 stemLen, uint256 trailingDigits) = _analyse(label);
 
-    if (trailingDigits > 2) revert InvalidName();
-    if (baselen <= 5)       return Status.Reserved;
+    // Trailing digits must be zero or exactly two
+    if (trailingDigits == 1 || trailingDigits > 2) revert InvalidName();
+    if (stemLen <= 5)        return Status.Reserved;
+
+    if (stemLen >= 9)        return Status.NoStatus; // zero or two digits
+    // stemLen is 6-8 from here
 
     if (trailingDigits == 0) return Status.PopFull;
-    // trailingDigits is 1 or 2 from here
-
-    if (baselen <= 8)       return Status.PopLite;
-    // baselen >= 9 with 1-2 trailing digits
-    return Status.NoStatus;
+    return Status.PopLite;   // stem 6-8 with exactly two digits
 }`;
 </script>

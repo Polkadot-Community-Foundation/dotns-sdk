@@ -112,8 +112,6 @@ export type AuthOptionValues = {
   rpc?: string;
   /** Path to keystore directory */
   keystorePath?: string;
-  /** Minimum balance in PAS required for operations */
-  minBalance?: string;
   /** Account name to use from keystore */
   account?: string;
   /** Password to decrypt keystore */
@@ -176,13 +174,8 @@ export type ResolvedAuthSource = {
   resolvedFrom: ResolveSource;
   /** The account name that was used */
   account: string;
-};
-
-export type CommitmentResults = {
-  /** Commitment hash for the registration */
-  commitment: Hex;
-  /** Domain registration parameters */
-  registration: DomainRegistration;
+  /** Credential used to encrypt local retry secrets for this resolved signer */
+  credential?: string;
 };
 
 export type BulletinUploadOptions = {
@@ -266,15 +259,6 @@ export type BulletinStoreResult = {
 export type ChunkedStoreResult = {
   /** Root CID of the DAG-PB merkle tree linking all chunks */
   rootCid: string;
-};
-
-export type BalanceStatus = {
-  /** Whether balance meets minimum requirement */
-  ok: boolean;
-  /** Current account balance in native units */
-  current: bigint;
-  /** Required minimum balance in native units */
-  required: bigint;
 };
 
 export type AccountInfoOptions = {
@@ -440,17 +424,6 @@ export type VerificationResult = {
   statusCode?: number;
   /** Error message if resolution failed */
   errorMessage?: string;
-};
-
-export type BlockVerificationResult = {
-  /** Total number of CIDs verified */
-  totalBlocks: number;
-  /** List of CIDs that were successfully resolved */
-  resolvableBlocks: string[];
-  /** List of CIDs that could not be resolved */
-  missingBlocks: string[];
-  /** Gateway URL used for verification */
-  gateway: string;
 };
 
 export type HashingEnumVariant =
@@ -635,8 +608,6 @@ type BaseChainContext = {
   environment?: string;
   /** WebSocket RPC endpoint URL */
   rpc: string;
-  /** Minimum balance in PAS required for operations */
-  minBalancePas: string;
   /** Path to keystore directory */
   keystorePath: string;
   /** Resolved authentication source */
@@ -724,6 +695,8 @@ export type DomainLookupResult = {
   } | null;
   /** PopRules reservation status for the base name, or null if the label has no trailing digits. */
   baseNameReservation: BaseNameReservation | null;
+  /** The name's chat key from the PoP resolver (hex), or null if none is set. */
+  chatKey: string | null;
 };
 
 export type ChainContext = AssetHubContext | BulletinContext;
