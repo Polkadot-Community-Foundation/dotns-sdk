@@ -1,4 +1,3 @@
-import type { SpWeightsWeightV2Weight } from "@dedot/chaintypes/substrate";
 import type { Address, Hash } from "viem";
 
 export type NetworkConfig = {
@@ -9,35 +8,8 @@ export type NetworkConfig = {
     symbol: string;
     decimals: number;
   };
-  rpcUrls: string[];
   blockExplorerUrls?: string[];
 };
-
-export type Deployment = {
-  multiCall: Address;
-  defaultReverseRegistrar: Address;
-  ethRPCURL: string;
-  storeFactory: Address;
-  dotnsRegistrar: Address;
-  dotnsReverseResolver: Address;
-  dotnsRegistry: Address;
-  dotnsContentResolver: Address;
-  dotnsResolver: Address;
-  popOracle: Address;
-  dotnsRegistrarController: Address;
-};
-
-export type AbiName =
-  | "DotnsRegistrarController"
-  | "DotnsRegistrar"
-  | "DotnsResolver"
-  | "DotnsReverseResolver"
-  | "DotnsContentResolver"
-  | "StoreFactory"
-  | "Store"
-  | "PopRules"
-  | "DotnsRegistry"
-  | "MultiCall";
 
 export type Registration = {
   label: string;
@@ -58,6 +30,7 @@ export type ProfileRecord = {
   github: string;
   description: string;
   url: string;
+  custom: TextRecord[];
 };
 
 export type ResolverStatus = {
@@ -98,26 +71,6 @@ export type MyDomain = {
   popRequirement?: NameRequirement;
 };
 
-export type EthCallResult = {
-  gasConsumed: SpWeightsWeightV2Weight;
-  gasRequired: SpWeightsWeightV2Weight;
-  storageDeposit: {
-    type: "Charge" | "Refund";
-    value: bigint;
-  };
-  result: Result;
-};
-
-export type Result = {
-  success: boolean;
-  isErr: boolean;
-  isOk: boolean;
-  value?: {
-    data: `0x${string}` | any;
-    flags?: any;
-  };
-};
-
 export type GenericTransaction = {
   accessList?: AccessList | null;
   authorizationList?: AuthorizationListEntry[];
@@ -150,22 +103,6 @@ export type AuthorizationListEntry = {
   r: `0x${string}`;
   s: `0x${string}`;
   yParity: number;
-};
-
-export type MulticallCall = {
-  target: Address;
-  callData: `0x${string}`;
-};
-
-export type Aggregate3Call = {
-  target: Address;
-  allowFailure: boolean;
-  callData: `0x${string}`;
-};
-
-export type Aggregate3Result = {
-  success: boolean;
-  returnData: `0x${string}`;
 };
 
 export type DotnsAvailability = {
@@ -220,10 +157,4 @@ export type AuthorizationState = {
 
 export type BulletinUploadResult = {
   cid: string;
-};
-
-export type ContractAuthStatus = {
-  name: string;
-  address: Address;
-  authorized: boolean;
 };

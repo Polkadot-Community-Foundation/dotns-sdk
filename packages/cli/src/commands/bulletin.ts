@@ -69,13 +69,13 @@ export function clampU32(value: bigint | number, fieldName: string): number {
   return Number(asBigInt);
 }
 
-export function isAuthorizationSufficient(status: AuthorizationStatus): boolean {
+function isAuthorizationSufficient(status: AuthorizationStatus): boolean {
   if (!status.authorized) return false;
   if (status.expired) return false;
   return true;
 }
 
-export function isTestnetSpecName(specName: string | undefined | null): boolean {
+function isTestnetSpecName(specName: string | undefined | null): boolean {
   if (!specName) return false;
   const s = specName.toLowerCase();
   if (s.includes("paseo")) return true;
@@ -897,7 +897,7 @@ export async function uploadChunkedBlocks(
             onPhase,
             "upload",
             "success",
-            `Uploaded ${totalChunks} chunks (${formatBytes(fileSize)}) in ${formatDuration(elapsed)} — ${formatBytes(throughput)}/s`,
+            `Uploaded ${totalChunks} chunks (${formatBytes(fileSize)}) in ${formatDuration(elapsed)} at ${formatBytes(throughput)}/s`,
           );
           return storeResult.rootCid;
         } catch (error) {
@@ -983,7 +983,7 @@ export async function storeDirectory(
                     onPhase,
                     "upload",
                     "update",
-                    `Wave complete — ${completedCount} blocks uploaded (${formatBytes(throughput)}/s)`,
+                    `Wave complete: ${completedCount} blocks uploaded (${formatBytes(throughput)}/s)`,
                   );
                 }
               },
@@ -996,7 +996,7 @@ export async function storeDirectory(
             onPhase,
             "upload",
             "success",
-            `Uploaded ${totalBlocks} blocks (${formatBytes(totalBytes)}) in ${formatDuration(elapsed)} — ${formatBytes(throughput)}/s`,
+            `Uploaded ${totalBlocks} blocks (${formatBytes(totalBytes)}) in ${formatDuration(elapsed)} at ${formatBytes(throughput)}/s`,
           );
 
           console.log(chalk.gray("  root cid: ") + chalk.cyan(rootCid.toString()));

@@ -135,25 +135,94 @@
               </div>
             </div>
 
-            <div class="text-left mb-6">
-              <label class="flex items-center gap-3 cursor-pointer group">
-                <div class="relative">
-                  <input
-                    v-model="isReserved"
-                    type="checkbox"
-                    class="sr-only peer"
-                    :disabled="isFetching || isRegistering"
-                  />
-                  <div
-                    class="w-11 h-6 bg-dot-border-strong rounded-full peer peer-checked:bg-primary peer-focus:ring-2 peer-focus:ring-dot-accent/20 transition-colors"
-                  ></div>
-                  <div
-                    class="absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"
-                  ></div>
-                </div>
+            <div v-if="isReservedName" class="text-left mb-6">
+              <div class="flex items-center gap-3">
+                <Toggle
+                  v-model="isGovernance"
+                  :disabled="isFetching || isRegistering"
+                  aria-labelledby="governance-label"
+                />
                 <div class="flex-1">
                   <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold text-dot-text-secondary"
+                    <span
+                      id="governance-label"
+                      class="text-sm font-semibold text-dot-text-secondary"
+                      >Register via governance</span
+                    >
+                    <WhitelistBadge :whitelisted="whitelisted" />
+                  </div>
+                  <p class="text-xs text-dot-text-tertiary mt-1">
+                    Reserved names are minted free through the whitelisted governance route.
+                    <span v-if="!whitelisted" class="text-amber-500"
+                      >Your account is not whitelisted, so this transaction will revert.</span
+                    >
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="text-left mb-6">
+              <div class="flex items-center gap-3">
+                <Toggle
+                  v-model="registerForOther"
+                  :disabled="isFetching || isRegistering"
+                  aria-labelledby="register-for-other-label"
+                />
+                <div class="flex-1">
+                  <span
+                    id="register-for-other-label"
+                    class="text-sm font-semibold text-dot-text-secondary"
+                    >Register for someone else</span
+                  >
+                  <p class="text-xs text-dot-text-tertiary mt-1">
+                    You pay the fee; the name is owned by the address below.
+                  </p>
+                </div>
+              </div>
+              <div v-if="registerForOther" class="mt-3">
+                <input
+                  v-model="ownerInput"
+                  type="text"
+                  placeholder="Owner address (EVM, SS58, or .dot name)"
+                  :disabled="isRegistering"
+                  class="w-full border border-dot-border rounded-lg px-3 py-2 bg-dot-surface text-dot-text-primary placeholder:text-dot-text-tertiary focus:ring-2 focus:ring-dot-accent/20 focus:outline-none transition-colors text-sm font-mono"
+                />
+                <p v-if="isResolvingOwner" class="text-xs text-dot-text-tertiary mt-1">
+                  Resolving…
+                </p>
+                <p v-else-if="ownerInput && ownerError" class="text-xs text-amber-500 mt-1">
+                  {{ ownerError }}
+                </p>
+                <p
+                  v-else-if="ownerInput && resolvedOwner"
+                  class="text-xs text-dot-text-secondary mt-1 font-mono break-all"
+                >
+                  Owner: {{ resolvedOwner }}
+                </p>
+                <div
+                  v-if="isCrossOwner && ownerPop !== null"
+                  class="mt-2 flex items-center gap-2 text-xs"
+                >
+                  <span class="text-dot-text-tertiary">Owner's PoP status:</span>
+                  <span class="px-2 py-0.5 rounded-full" :class="popStatusBadgeClass(ownerPop)">
+                    {{ PopStatusLabels[ownerPop] }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!registerForOther" class="text-left mb-6">
+              <div class="flex items-center gap-3">
+                <Toggle
+                  v-model="isReserved"
+                  :disabled="isFetching || isRegistering"
+                  aria-labelledby="reverse-record-label"
+                />
+                <div class="flex-1">
+                  <div class="flex items-center gap-2">
+                    <span
+                      id="reverse-record-label"
+                      class="text-sm font-semibold text-dot-text-secondary"
                       >Set as Reverse Record</span
                     >
                     <div class="relative group/tooltip">
@@ -176,7 +245,7 @@
                     Use this name as your primary identity when resolvers query your address
                   </p>
                 </div>
-              </label>
+              </div>
             </div>
 
             <div class="text-left mb-8">
@@ -197,7 +266,9 @@
                       <p class="font-semibold mb-1">Pricing by PoP Status:</p>
                       <ul class="space-y-1 text-left">
                         <li>• <span class="font-medium">Pop Lite/Full:</span> Free registration</li>
-                        <li>• <span class="font-medium">No Status:</span> Based on name length</li>
+                        <li>
+                          • <span class="font-medium">No Status:</span> Flat refundable deposit
+                        </li>
                       </ul>
                       <div class="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
                         <div class="border-4 border-transparent border-t-gray-900"></div>
@@ -222,7 +293,13 @@
               size="lg"
               variant="primary"
               full-width
-              :disabled="isFetching || isRegistering || !wallet.isConnected || !requirementMet"
+              :disabled="
+                isFetching ||
+                isRegistering ||
+                !wallet.isConnected ||
+                !requirementMet ||
+                (registerForOther && (isResolvingOwner || !resolvedOwner))
+              "
               :loading="isRegistering"
               @click="startRegistration"
             >
@@ -242,11 +319,15 @@ import { ref, watch, computed, onUnmounted } from "vue";
 import { useWalletStore } from "../store/useWalletStore";
 import Icon from "@/components/ui/Icon.vue";
 import Button from "@/components/ui/Button.vue";
+import Toggle from "@/components/ui/Toggle.vue";
+import WhitelistBadge from "@/components/WhitelistBadge.vue";
 import { PopStatus, PopStatusLabels, type NameRequirement, type Registration } from "../type";
 import { useDomainStore } from "@/store/useDomainStore";
-import { formatEther, zeroHash, parseEther } from "viem";
+import { formatEther, zeroHash, parseEther, type Address } from "viem";
 import { useToast } from "vue-toastification";
 import { popStatusBadgeClass } from "@/lib/uiHelpers";
+import { useAddressResolver } from "@/composables";
+import { isSameEvmAddress } from "@/lib/address";
 
 const props = defineProps<{
   open: boolean;
@@ -257,7 +338,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   confirm: [number];
-  wait: [bigint, bigint, Registration];
+  wait: [bigint, bigint, Registration, boolean];
 }>();
 
 const toaster = useToast();
@@ -268,6 +349,33 @@ const price = ref("0");
 const isFetching = ref(false);
 const isRegistering = ref(false);
 const isReserved = ref(false);
+const isGovernance = ref(false);
+
+const registerForOther = ref(false);
+const ownerInput = ref("");
+const ownerPop = ref<PopStatus | null>(null);
+const whitelisted = ref(false);
+
+const {
+  resolvedAddress: resolvedOwner,
+  isResolving: isResolvingOwner,
+  error: ownerError,
+} = useAddressResolver(ownerInput, { defaultAddress: wallet.evmAddress });
+
+// The address the name is registered to: the connected wallet by default, or the
+// resolved owner when registering on someone else's behalf.
+const ownerEvm = computed<Address | null>(() =>
+  registerForOther.value ? resolvedOwner.value : ((wallet.evmAddress as Address) ?? null),
+);
+
+const isCrossOwner = computed(
+  () =>
+    !!ownerEvm.value && !!wallet.evmAddress && !isSameEvmAddress(ownerEvm.value, wallet.evmAddress),
+);
+
+// Reserved names cannot be registered through the open commit-reveal path; they
+// require the whitelisted governance route (registerReserved), which is free.
+const isReservedName = computed(() => props.userPopStatus?.requirement === PopStatus.Reserved);
 
 const parsedPrice = computed(() => {
   try {
@@ -277,29 +385,54 @@ const parsedPrice = computed(() => {
   }
 });
 
+// Eligibility is gated on the OWNER's PoP tier (the contract reverts
+// OwnerStatusInsufficient otherwise), so when minting for someone else we check
+// their status, not the caller's.
+const effectivePop = computed<PopStatus | null>(() =>
+  isCrossOwner.value ? ownerPop.value : (wallet.userPopState ?? null),
+);
+
 const requirementMet = computed(() => {
   if (!props.userPopStatus) return true;
 
   const required = props.userPopStatus.requirement;
-  const userStatus = wallet.userPopState;
-
-  if (required === PopStatus.Reserved) return false;
+  if (required === PopStatus.Reserved) return isGovernance.value;
   if (required === PopStatus.NoStatus) return true;
+
+  const status = effectivePop.value;
+  if (status == null) return false;
   if (required === PopStatus.PopLite) {
-    return userStatus === PopStatus.PopLite || userStatus === PopStatus.PopFull;
+    return status === PopStatus.PopLite || status === PopStatus.PopFull;
   }
   if (required === PopStatus.PopFull) {
-    return userStatus === PopStatus.PopFull;
+    return status === PopStatus.PopFull;
   }
-
   return false;
 });
 
 async function fetchPrice() {
+  if (isGovernance.value) {
+    price.value = "0";
+    return;
+  }
+  const owner = ownerEvm.value;
+  if (!owner) {
+    price.value = "0";
+    return;
+  }
   try {
     isFetching.value = true;
-    const cost = await domainStore.priceWithoutCheck(props.handle);
-    price.value = formatEther(cost.price);
+    const cost = await domainStore.priceWithoutCheck(props.handle, owner);
+    let total = cost.price;
+    if (isCrossOwner.value && wallet.evmAddress) {
+      const friction = await domainStore.quoteTransferFloor(
+        props.handle,
+        wallet.evmAddress as Address,
+        owner,
+      );
+      if (friction > total) total = friction;
+    }
+    price.value = formatEther(total);
   } catch {
     price.value = "0";
   } finally {
@@ -307,25 +440,43 @@ async function fetchPrice() {
   }
 }
 
+// Re-price and re-check eligibility whenever the resolved owner changes.
+watch([ownerEvm, isCrossOwner, isGovernance], async () => {
+  ownerPop.value =
+    isCrossOwner.value && ownerEvm.value ? await domainStore.userPopStatus(ownerEvm.value) : null;
+  if (props.open) await fetchPrice();
+});
+
 async function startRegistration() {
   try {
     isRegistering.value = true;
 
-    const owner = wallet.evmAddress;
-    if (!wallet.isConnected || !owner) {
+    if (!wallet.isConnected || !wallet.evmAddress) {
       throw new Error("Wallet not connected");
     }
 
-    if (!requirementMet.value) {
-      toaster.error("Your PoP status does not meet the requirements for this name");
+    const owner = ownerEvm.value;
+    if (!owner) {
+      toaster.error(ownerError.value || "Enter a valid owner address");
       isRegistering.value = false;
       return;
     }
 
+    if (!requirementMet.value) {
+      toaster.error(
+        isCrossOwner.value
+          ? "The owner's PoP status does not meet the requirements for this name"
+          : "Your PoP status does not meet the requirements for this name",
+      );
+      isRegistering.value = false;
+      return;
+    }
+
+    // Reverse record only applies to self-registration; never set someone else's name as ours.
     const { commitment, registration } = await domainStore.makeCommitment(
       props.handle,
       owner,
-      isReserved.value,
+      isCrossOwner.value ? false : isReserved.value,
     );
 
     const result = await domainStore.commitRegistration(commitment);
@@ -336,7 +487,7 @@ async function startRegistration() {
     }
 
     const waitTime = await domainStore.getMinCommitmentAge();
-    emit("wait", parsedPrice.value, BigInt(waitTime), registration);
+    emit("wait", parsedPrice.value, BigInt(waitTime), registration, isGovernance.value);
 
     isRegistering.value = false;
     emit("close");
@@ -364,8 +515,15 @@ watch(
   async (open) => {
     if (open) {
       document.addEventListener("keydown", handleEscape);
-      await fetchPrice();
       isReserved.value = false;
+      isGovernance.value = false;
+      registerForOther.value = false;
+      ownerInput.value = "";
+      ownerPop.value = null;
+      whitelisted.value = wallet.evmAddress
+        ? await domainStore.isWhitelisted(wallet.evmAddress as Address)
+        : false;
+      await fetchPrice();
     } else {
       document.removeEventListener("keydown", handleEscape);
     }

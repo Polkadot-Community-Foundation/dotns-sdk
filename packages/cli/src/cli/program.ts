@@ -8,9 +8,10 @@ import { attachPopCommands } from "./commands/pop";
 import { attachRegisterCommand } from "./commands/registerCommand";
 import { attachAccountCommands } from "./commands/info";
 import { version } from "../../package.json";
-import { banner } from "./ui";
 import { attachStoreCommands } from "./commands/store";
 import { attachEscrowCommands } from "./commands/escrow";
+import { attachDelegateCommands } from "./commands/delegate";
+import { attachPrimaryCommands } from "./commands/primary";
 import { ENV } from "./env";
 
 export function createProgram() {
@@ -30,8 +31,8 @@ export function createProgram() {
   attachAccountCommands(program);
   attachStoreCommands(program);
   attachEscrowCommands(program);
-
-  if (!process.argv.includes("--json")) banner();
+  attachDelegateCommands(program);
+  attachPrimaryCommands(program);
 
   return program;
 }

@@ -2,7 +2,60 @@
   <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 font-sans text-dot-text-primary">
     <div class="mb-8 text-center">
       <h1 class="text-4xl font-serif font-extrabold text-dot-text-primary mb-4">Profile</h1>
+      <button
+        v-if="wallet.substrateAddress"
+        type="button"
+        class="group mx-auto flex max-w-full items-center gap-2 rounded-lg border border-dot-border bg-dot-surface-secondary px-3 py-1.5 text-dot-text-secondary hover:text-dot-text-primary transition-colors cursor-pointer"
+        :title="addressCopied ? 'Copied!' : 'Copy address'"
+        @click="copyAddress"
+      >
+        <span class="font-mono text-sm break-all">{{ wallet.substrateAddress }}</span>
+        <svg
+          v-if="!addressCopied"
+          class="w-4 h-4 shrink-0 text-dot-text-tertiary group-hover:text-dot-text-primary"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+          />
+        </svg>
+        <svg
+          v-else
+          class="w-4 h-4 shrink-0 text-success"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M5 13l4 4L19 7"
+          />
+        </svg>
+      </button>
+
+      <div v-if="wallet.isConnected" class="mt-3 flex flex-wrap items-center justify-center gap-2">
+        <PopStatusBadge :status="myPopStatus" />
+        <WhitelistBadge :whitelisted="whitelisted" />
+      </div>
+
+      <div
+        v-if="myChatKey"
+        class="mx-auto mt-2 flex max-w-full items-center justify-center gap-1 text-xs text-dot-text-tertiary"
+      >
+        <span class="shrink-0">Chat key:</span>
+        <span class="font-mono break-all text-dot-text-secondary">{{ myChatKey }}</span>
+        <CopyButton :value="myChatKey" label="Copy chat key" />
+      </div>
     </div>
+
+    <PendingClaimsBanner />
 
     <div class="mb-8 flex border-b border-dot-border">
       <button
@@ -27,19 +80,30 @@
     <Transition name="tab-fade" mode="out-in">
       <div v-if="activeTab === 'domains'" key="domains">
         <div class="mb-3 flex justify-between items-center flex-wrap gap-3">
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="Search domains..."
-            class="border border-dot-border rounded-lg px-4 py-2 w-full sm:w-1/3 bg-dot-surface text-dot-text-primary placeholder:text-dot-text-tertiary focus:ring-2 focus:ring-dot-accent/20 focus:outline-none transition-colors"
-            :disabled="isLoading"
-          />
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Search domains..."
+              class="border border-dot-border rounded-lg px-4 py-2 w-full sm:w-64 bg-dot-surface text-dot-text-primary placeholder:text-dot-text-tertiary focus:ring-2 focus:ring-dot-accent/20 focus:outline-none transition-colors"
+              :disabled="isLoading"
+            />
+            <select
+              v-model="nameFilter"
+              aria-label="Filter by name type"
+              class="border border-dot-border rounded-lg px-3 py-2 bg-dot-surface text-dot-text-primary focus:ring-2 focus:ring-dot-accent/20 focus:outline-none transition-colors"
+              :disabled="isLoading"
+            >
+              <option value="tld">TLDs only</option>
+              <option value="all">All names</option>
+            </select>
+          </div>
           <div v-if="tlds.length > 0" class="flex gap-3">
             <Button @click="openAddSubdomains" :disabled="isLoading">Add Subdomain</Button>
             <Button
               variant="secondary"
               @click="openTransferModal"
-              :disabled="isLoading || transferableTlds.length === 0"
+              :disabled="isLoading || tlds.length === 0"
             >
               Transfer Domain
             </Button>
@@ -191,7 +255,10 @@
                   class="hover:bg-dot-surface-secondary transition-colors duration-150"
                 >
                   <td class="px-4 py-2.5 font-medium text-dot-text-primary whitespace-nowrap">
-                    {{ domain.name }}
+                    <span class="inline-flex items-center gap-2">
+                      {{ domain.name }}
+                      <PrimaryNameBadge :name="domain.name" :primary-name="primaryName" />
+                    </span>
                   </td>
 
                   <td class="px-4 py-2.5">
@@ -284,6 +351,27 @@
                       <Button size="sm" variant="secondary" @click="openResolve(domain.name)">
                         Resolve
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        :disabled="!domain.isOwner || getType(domain.name) !== 'TLD'"
+                        @click="openDelegateModal(domain.name)"
+                      >
+                        Delegate
+                      </Button>
+                      <Button
+                        v-if="
+                          domain.isOwner &&
+                          getType(domain.name) === 'TLD' &&
+                          !isPrimaryName(domain.name)
+                        "
+                        size="sm"
+                        variant="secondary"
+                        :disabled="settingPrimary === domain.name"
+                        @click="setPrimary(domain.name)"
+                      >
+                        {{ settingPrimary === domain.name ? "Setting..." : "Set Primary" }}
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -301,7 +389,7 @@
         </div>
       </div>
 
-      <div v-else key="bulletin">
+      <div v-else-if="activeTab === 'bulletin'" key="bulletin">
         <div
           class="mb-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3"
         >
@@ -498,6 +586,14 @@
           />
         </div>
       </div>
+
+      <div v-else-if="activeTab === 'store'" key="store">
+        <StoreTab />
+      </div>
+
+      <div v-else key="escrow">
+        <EscrowTab />
+      </div>
     </Transition>
 
     <AddSubdomainModal
@@ -510,8 +606,15 @@
     <TransferDomainModal
       :open="showTransferModal"
       @close="showTransferModal = false"
-      :domains="transferableTlds"
+      :domains="tlds"
       @transferred="handleDomainTransferred"
+    />
+
+    <DelegateDomainModal
+      :open="showDelegateModal"
+      :domain="delegateDomain"
+      @close="showDelegateModal = false"
+      @delegated="handleDelegated"
     />
 
     <TransactionStatus
@@ -527,17 +630,6 @@
       @close="showResolveModal = false"
       @save="saveResolve"
     />
-
-    <AuthorizeStoreModal
-      v-if="authGuard.showAuthModal.value"
-      :open="authGuard.showAuthModal.value"
-      :contracts="authGuard.authStatuses.value"
-      :loading="authGuard.authLoading.value"
-      :progress="authGuard.authProgress.value"
-      :error="authGuard.authError.value"
-      @close="authGuard.handleAuthClose"
-      @submit="authGuard.handleAuthSubmit"
-    />
   </main>
 </template>
 
@@ -546,29 +638,50 @@ import { ref, computed, onBeforeMount, watch } from "vue";
 import { useWalletStore } from "@/store/useWalletStore";
 import AddSubdomainModal from "../components/modals/AddSubdomainModal.vue";
 import TransferDomainModal from "../components/modals/TransferDomainModal.vue";
-import AuthorizeStoreModal from "../components/modals/AuthorizeStoreModal.vue";
+import DelegateDomainModal from "../components/modals/DelegateDomainModal.vue";
 import ResolveIPFSModal from "../components/modals/ResolveIPFSModal.vue";
 import TransactionStatus from "../components/TransactionStatus.vue";
-import { useStoreAuthGuard } from "@/composables/useStoreAuthGuard";
 import type { MyDomain, TransactionResult, NameRequirement } from "@/type";
 import { zeroHash, type Address } from "viem";
 import { useRouter } from "vue-router";
+import { useToast } from "vue-toastification";
+import { dotliViewUrls } from "@/lib/dotli";
+import PrimaryNameBadge from "@/components/PrimaryNameBadge.vue";
+import PopStatusBadge from "@/components/PopStatusBadge.vue";
+import WhitelistBadge from "@/components/WhitelistBadge.vue";
+import PendingClaimsBanner from "@/components/PendingClaimsBanner.vue";
+import CopyButton from "@/components/ui/CopyButton.vue";
+import { isSameDotName } from "@/lib/domain";
 import { useResolverStore } from "@/store/useResolverStore";
 import { useUserStoreManager } from "@/store/useUserStoreManager";
 import { useDomainStore } from "@/store/useDomainStore";
-import { PopStatusLabels } from "@/type";
+import { PopStatusLabels, type PopStatus } from "@/type";
 import { popStatusBadgeClass } from "@/lib/uiHelpers";
-import { useTooltip, useTooltipManager, useMulticallOwnership } from "@/composables";
+import {
+  useTooltip,
+  useTooltipManager,
+  useMulticallOwnership,
+  useCopyToClipboard,
+} from "@/composables";
 import Icon from "@/components/ui/Icon.vue";
 import Button from "@/components/ui/Button.vue";
 import TablePagination from "@/components/ui/TablePagination.vue";
+import EscrowTab from "../components/profile/EscrowTab.vue";
+import StoreTab from "../components/profile/StoreTab.vue";
 import { encodeForPreview } from "@/lib/preview";
 
 const wallet = useWalletStore();
-const authGuard = useStoreAuthGuard();
+const { copy } = useCopyToClipboard();
 const isLoading = ref(true);
 const allDomains = ref<MyDomain[]>([]);
+// The account's reverse record: the one name that resolves back to it, shown as
+// "Primary" and highlighted in the domains list.
+const primaryName = ref<string | null>(null);
+const myPopStatus = ref<PopStatus | null>(null);
+const whitelisted = ref(false);
+const myChatKey = ref<string | null>(null);
 const searchQuery = ref("");
+const nameFilter = ref<"tld" | "all">("tld");
 const showAddModal = ref<any>(null);
 const showTransferModal = ref(false);
 const showTransaction = ref(false);
@@ -576,15 +689,17 @@ const selectedHandle = ref("");
 const transaction = ref<TransactionResult>({ hash: zeroHash, status: false });
 const currentPage = ref(1);
 const itemsPerPage = ref(10);
-const tlds = ref<string[]>([]);
-const activeTab = ref<"domains" | "bulletin">("domains");
+const activeTab = ref<"domains" | "bulletin" | "store" | "escrow">("domains");
 const tabs = [
   { id: "domains" as const, label: "My Domains" },
   { id: "bulletin" as const, label: "Bulletin Uploads" },
+  { id: "store" as const, label: "Store" },
+  { id: "escrow" as const, label: "Escrow" },
 ];
 const bulletinUploads = ref<string[]>([]);
 const isLoadingUploads = ref(false);
 const cidCopied = ref<string | null>(null);
+const addressCopied = ref(false);
 const bulletinPage = ref(1);
 const bulletinPageSize = ref(10);
 const showAddCidForm = ref(false);
@@ -598,10 +713,18 @@ const paginatedUploads = computed(() => {
 });
 
 async function copyCid(cid: string) {
-  await navigator.clipboard.writeText(cid);
+  if (!(await copy(cid))) return;
   cidCopied.value = cid;
   setTimeout(() => {
     if (cidCopied.value === cid) cidCopied.value = null;
+  }, 2000);
+}
+
+async function copyAddress(): Promise<void> {
+  if (!wallet.substrateAddress || !(await copy(wallet.substrateAddress))) return;
+  addressCopied.value = true;
+  setTimeout(() => {
+    addressCopied.value = false;
   }, 2000);
 }
 
@@ -639,6 +762,7 @@ async function handleDeleteCid(cid: string) {
 }
 
 const router = useRouter();
+const toast = useToast();
 const showResolveModal = ref(false);
 const selectedDomain = ref("");
 const resolverStore = useResolverStore();
@@ -671,6 +795,39 @@ function openRecordEditor(name: string) {
   router.push(`/whois/${name}`);
 }
 
+const showDelegateModal = ref(false);
+const delegateDomain = ref("");
+
+function openDelegateModal(name: string) {
+  delegateDomain.value = name;
+  showDelegateModal.value = true;
+}
+
+function handleDelegated() {
+  showDelegateModal.value = false;
+  loadDomains();
+}
+
+const settingPrimary = ref<string | null>(null);
+
+function isPrimaryName(name: string): boolean {
+  return isSameDotName(name, primaryName.value);
+}
+
+async function setPrimary(name: string) {
+  settingPrimary.value = name;
+  try {
+    await resolverStore.setPrimaryName(name);
+    primaryName.value = name;
+    toast.success(`${name} is now your primary name`);
+  } catch (error) {
+    console.warn("[ProfileView] Failed to set primary name:", error);
+    toast.error("Failed to set primary name");
+  } finally {
+    settingPrimary.value = null;
+  }
+}
+
 function parseDotName(name: string): { parts: string[]; tldLabel: string } {
   const normalized = name.trim().toLowerCase();
   const withoutDot = normalized.endsWith(".dot") ? normalized.slice(0, -4) : normalized;
@@ -701,8 +858,16 @@ onBeforeMount(() => {
 });
 
 const filteredDomains = computed(() =>
-  allDomains.value.filter((d) => d.name.toLowerCase().includes(searchQuery.value.toLowerCase())),
+  allDomains.value.filter(
+    (d) =>
+      (nameFilter.value === "all" || d.type === "TLD") &&
+      d.name.toLowerCase().includes(searchQuery.value.toLowerCase()),
+  ),
 );
+
+watch([searchQuery, nameFilter], () => {
+  currentPage.value = 1;
+});
 
 const paginatedDomains = computed(() =>
   filteredDomains.value.slice(
@@ -711,22 +876,18 @@ const paginatedDomains = computed(() =>
   ),
 );
 
-const transferableTlds = computed(() =>
+const tlds = computed(() =>
   allDomains.value.filter((d) => d.type === "TLD" && d.isOwner).map((d) => d.name),
 );
 
 function openAddSubdomains() {
   if (tlds.value.length > 0) {
-    authGuard.checkAuthAndProceed(() => {
-      showAddModal.value = { open: true, tld: "", tlds };
-    });
+    showAddModal.value = { open: true, tld: "", tlds };
   }
 }
 
 function openTransferModal() {
-  authGuard.checkAuthAndProceed(() => {
-    showTransferModal.value = true;
-  });
+  showTransferModal.value = true;
 }
 
 function openResolve(domain: string) {
@@ -748,8 +909,13 @@ async function saveResolve(hash: string) {
   try {
     const tx = await resolverStore.setContentHash(selectedDomain.value, hash);
     transaction.value = tx;
-  } catch {
+    if (tx.status) {
+      const [production, paseo] = dotliViewUrls(selectedDomain.value);
+      toast.success(`Content set. View on dot.li:\n${production}\n${paseo}`);
+    }
+  } catch (error) {
     transaction.value = { hash: zeroHash, status: false };
+    toast.error(error instanceof Error ? error.message : "Failed to set content hash");
   }
 }
 
@@ -768,10 +934,26 @@ async function loadDomains() {
   isLoading.value = true;
 
   try {
+    if (wallet.evmAddress) {
+      const evm = wallet.evmAddress as Address;
+      [primaryName.value, myPopStatus.value, whitelisted.value] = await Promise.all([
+        resolverStore.resolveAddressToName(evm),
+        domainStore.userPopStatus(evm),
+        domainStore.isWhitelisted(evm),
+      ]);
+      myChatKey.value = primaryName.value
+        ? await resolverStore.getChatKey(primaryName.value)
+        : null;
+    } else {
+      primaryName.value = null;
+      myPopStatus.value = null;
+      whitelisted.value = false;
+      myChatKey.value = null;
+    }
+
     const names = await userStoreManager.getSubdomains();
     if (names.length === 0) {
       allDomains.value = [];
-      tlds.value = [];
       return;
     }
 
@@ -805,11 +987,9 @@ async function loadDomains() {
     }
 
     allDomains.value = verified;
-    tlds.value = verified.filter((d) => d.type === "TLD" && d.isOwner).map((d) => d.name);
   } catch (error) {
     console.warn("Failed to load domains:", error);
     allDomains.value = [];
-    tlds.value = [];
   } finally {
     isLoading.value = false;
   }

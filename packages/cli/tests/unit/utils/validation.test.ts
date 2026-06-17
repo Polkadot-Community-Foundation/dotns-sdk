@@ -2,9 +2,70 @@ import { describe, expect, test } from "bun:test";
 import {
   validateDomainLabel,
   validateGovernanceLabel,
+  validateCanonicalLabel,
+  isCanonicalLabel,
+  isSecondLevelDotName,
   countTrailingDigits,
   stripTrailingDigits,
+  normaliseLabel,
 } from "../../../src/utils/validation";
+
+describe("normaliseLabel", () => {
+  test("lowercases, trims, and strips a single trailing .dot", () => {
+    expect(normaliseLabel("  Alice.DOT ")).toBe("alice");
+    expect(normaliseLabel("alice")).toBe("alice");
+    expect(normaliseLabel("sub.alice.dot")).toBe("sub.alice");
+  });
+});
+
+describe("isCanonicalLabel", () => {
+  test("accepts lowercase letters, digits and internal hyphens", () => {
+    expect(isCanonicalLabel("alice")).toBe(true);
+    expect(isCanonicalLabel("alice77")).toBe(true);
+    expect(isCanonicalLabel("a-b-c")).toBe(true);
+    expect(isCanonicalLabel("a")).toBe(true);
+  });
+
+  test("rejects dots, uppercase, spaces and other characters", () => {
+    expect(isCanonicalLabel("sphakjjj.77")).toBe(false);
+    expect(isCanonicalLabel("a.b")).toBe(false);
+    expect(isCanonicalLabel("Alice")).toBe(false);
+    expect(isCanonicalLabel("al ice")).toBe(false);
+    expect(isCanonicalLabel("under_score")).toBe(false);
+  });
+
+  test("rejects leading or trailing hyphens, empty and overlong labels", () => {
+    expect(isCanonicalLabel("-alice")).toBe(false);
+    expect(isCanonicalLabel("alice-")).toBe(false);
+    expect(isCanonicalLabel("")).toBe(false);
+    expect(isCanonicalLabel("a".repeat(63))).toBe(true);
+    expect(isCanonicalLabel("a".repeat(64))).toBe(false);
+  });
+});
+
+describe("isSecondLevelDotName", () => {
+  test("accepts a single label, with or without the .dot suffix", () => {
+    expect(isSecondLevelDotName("alice")).toBe(true);
+    expect(isSecondLevelDotName("alice.dot")).toBe(true);
+    expect(isSecondLevelDotName("ALICE.DOT")).toBe(true);
+  });
+
+  test("rejects subdomains", () => {
+    expect(isSecondLevelDotName("sub.alice")).toBe(false);
+    expect(isSecondLevelDotName("sub.alice.dot")).toBe(false);
+    expect(isSecondLevelDotName("a.b.c.dot")).toBe(false);
+  });
+});
+
+describe("validateCanonicalLabel", () => {
+  test("throws for a name containing a dot, naming the role", () => {
+    expect(() => validateCanonicalLabel("sphakjjj.77", "subname")).toThrow(/subname/);
+  });
+
+  test("does not throw for a canonical label", () => {
+    expect(() => validateCanonicalLabel("alice", "subname")).not.toThrow();
+  });
+});
 
 describe("countTrailingDigits", () => {
   test("returns 0 for a label with no trailing digits", () => {

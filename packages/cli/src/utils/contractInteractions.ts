@@ -10,10 +10,10 @@ import {
   concatHex,
 } from "viem";
 import type { PolkadotSigner } from "polkadot-api";
-import type { Ora } from "ora";
 import type { ReviveClientWrapper } from "../client/polkadotClient";
-import { DOT_NODE, OPERATION_TIMEOUT_MILLISECONDS } from "./constants";
-import { createTransactionStatusHandler, withTimeout } from "./formatting";
+import type { TransactionStatus } from "../types/types";
+import { DOT_NODE } from "./constants";
+import { withTimeout } from "./formatting";
 
 export const UNMAPPED_ORIGIN_REVERT_HINT =
   "Contract reverted with empty data. The origin SS58 is likely not mapped on " +
@@ -39,6 +39,14 @@ export function buildRevertError(data: Hex, abi: Abi): Error {
     // Unknown error selector — fall back to raw hex
   }
   return new Error(`Contract reverted: ${revertReason}`);
+}
+
+export function decodeContractRevertError(data: Hex, abi: Abi, context: string): Error {
+  if (data === "0x") {
+    return new Error(`${context} reverted with empty data. ${UNMAPPED_ORIGIN_REVERT_HINT}`);
+  }
+
+  return buildRevertError(data, abi);
 }
 
 export async function performContractCall<T>(
@@ -106,11 +114,11 @@ export async function submitContractTransaction(
   functionArguments: unknown[],
   signerSubstrateAddress: string,
   signer: PolkadotSigner,
-  spinner?: Ora,
-  operationName?: string,
+  statusCallback: (status: TransactionStatus) => void,
+  operationName: string,
+  opTimeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<Hex> {
-  await clientWrapper.ensureAccountMapped(signerSubstrateAddress, signer);
-
   const encodedCallData = encodeFunctionData({
     abi: contractAbi,
     functionName,
@@ -118,6 +126,9 @@ export async function submitContractTransaction(
   }) as Hex;
 
   const abortController = new AbortController();
+  const onAbort = () => abortController.abort();
+  if (signal?.aborted) abortController.abort();
+  else signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
     return await withTimeout(
@@ -127,33 +138,23 @@ export async function submitContractTransaction(
         encodedCallData,
         signerSubstrateAddress,
         signer,
-        createTransactionStatusHandler(spinner, operationName),
+        statusCallback,
         abortController.signal,
       ),
-      OPERATION_TIMEOUT_MILLISECONDS,
-      operationName || "Transaction",
+      opTimeoutMs,
+      operationName,
       () => abortController.abort(),
     );
   } catch (error) {
     if (error instanceof Error && error.message.includes("would revert: 0x")) {
-      const hexMatch = error.message.match(/0x[0-9a-fA-F]+/);
+      const hexMatch = error.message.match(/0x[0-9a-fA-F]*/);
       if (hexMatch) {
-        try {
-          const decoded = decodeErrorResult({
-            abi: contractAbi,
-            data: hexMatch[0] as Hex,
-          });
-          const reason = decoded.args
-            ? `${decoded.errorName}(${decoded.args.map(String).join(", ")})`
-            : decoded.errorName;
-          throw new Error(`Contract reverted: ${reason}`);
-        } catch (decodeError) {
-          if (decodeError instanceof Error && decodeError.message.startsWith("Contract reverted:"))
-            throw decodeError;
-        }
+        throw decodeContractRevertError(hexMatch[0] as Hex, contractAbi, operationName);
       }
     }
     throw error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
   }
 }
 

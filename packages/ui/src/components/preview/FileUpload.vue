@@ -7,11 +7,11 @@ import { useBulletinStore } from "@/store/useBulletinStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import Button from "@/components/ui/Button.vue";
 import TransactionStatus from "@/components/TransactionStatus.vue";
-import AuthorizeStoreModal from "@/components/modals/AuthorizeStoreModal.vue";
 import UploadApprovalStepper from "./UploadApprovalStepper.vue";
-import { useStoreAuthGuard } from "@/composables/useStoreAuthGuard";
 import { useUserStoreManager } from "@/store/useUserStoreManager";
+import { useCopyToClipboard } from "@/composables";
 import { encodeForPreview } from "@/lib/preview";
+import { setPreviewContent } from "@/lib/previewCache";
 import type { TransactionResult } from "@/type";
 import type { ApprovalStep, PendingUploadInfo } from "@/lib/bulletinUploadWorkerProtocol";
 
@@ -24,9 +24,9 @@ const RELEASES_URL = "https://github.com/paritytech/dotns-sdk/releases";
 
 const router = useRouter();
 const toast = useToast();
+const { copy } = useCopyToClipboard();
 const bulletinStore = useBulletinStore();
 const walletStore = useWalletStore();
-const authGuard = useStoreAuthGuard();
 const userStoreManager = useUserStoreManager();
 const cacheToStore = ref(false);
 const hasStore = ref(false);
@@ -112,15 +112,11 @@ const authorizeCommand = computed(() => {
 });
 
 async function copyAuthorizeCommand(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(authorizeCommand.value);
-    copiedAuthorize.value = true;
-    setTimeout(() => {
-      copiedAuthorize.value = false;
-    }, 2000);
-  } catch (error) {
-    console.warn("[FileUpload] Clipboard write failed:", error);
-  }
+  if (!(await copy(authorizeCommand.value))) return;
+  copiedAuthorize.value = true;
+  setTimeout(() => {
+    copiedAuthorize.value = false;
+  }, 2000);
 }
 
 const isWalletConnected = computed(() => walletStore.isConnected);
@@ -324,8 +320,15 @@ async function executeUpload(): Promise<void> {
   if (!selectedFile.value) return;
 
   try {
-    const result = await bulletinStore.uploadFile(selectedFile.value, {
+    const file = selectedFile.value;
+    const result = await bulletinStore.uploadFile(file, {
       cacheToStore: cacheToStore.value,
+    });
+    // We still hold the uploaded bytes — hand them to the preview so the
+    // /preview/<cid> navigation renders locally instead of refetching.
+    setPreviewContent(result.cid, {
+      blob: file,
+      contentType: file.type || "application/octet-stream",
     });
     emit("upload-complete", result.cid);
   } catch (error) {
@@ -354,7 +357,7 @@ async function startUpload(): Promise<void> {
     return;
   }
 
-  await authGuard.checkAuthAndProceed(executeUpload);
+  await executeUpload();
 }
 
 function handleTransactionClose(): void {
@@ -692,7 +695,7 @@ function handleTransactionClose(): void {
           </span>
           <span class="text-dot-text-secondary">
             Save CID to on-chain Store
-            <span v-if="!hasStore" class="text-dot-text-tertiary">(will deploy a Store)</span>
+            <span v-if="!hasStore" class="text-dot-text-tertiary">(will claim a Store)</span>
           </span>
         </button>
       </div>
@@ -768,10 +771,10 @@ function handleTransactionClose(): void {
           </button>
         </div>
         <router-link
-          to="/docs/dweb/bulletin"
+          to="/docs/dotli/publishing"
           class="text-dot-accent hover:text-dot-accent-hover hover:underline transition-colors duration-200 inline-block mt-1"
         >
-          Learn more about authorization
+          Learn more about publishing
         </router-link>
       </div>
       <button
@@ -792,16 +795,6 @@ function handleTransactionClose(): void {
       handle="Saving CID to Store"
       :transaction="transaction"
       @close="handleTransactionClose"
-    />
-
-    <AuthorizeStoreModal
-      :open="authGuard.showAuthModal.value"
-      :contracts="authGuard.authStatuses.value"
-      :loading="authGuard.authLoading.value"
-      :progress="authGuard.authProgress.value"
-      :error="authGuard.authError.value"
-      @submit="authGuard.handleAuthSubmit"
-      @close="authGuard.handleAuthClose"
     />
   </div>
 </template>

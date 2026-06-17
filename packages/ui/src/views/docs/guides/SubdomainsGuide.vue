@@ -41,15 +41,10 @@
     <div class="space-y-4">
       <h2 class="text-xl font-semibold text-dot-text-primary">Create a Subdomain</h2>
       <p class="text-dot-text-secondary leading-relaxed">
-        Creating a subdomain calls
-        <span class="font-mono text-dot-accent">setSubnodeOwner</span> on the
-        <RouterLink
-          to="/docs/contracts/registry"
-          class="text-dot-accent hover:text-dot-accent-hover"
-          >Registry</RouterLink
-        >
-        contract with the parent node, subdomain label hash, and the new owner address. This is a
-        single transaction. You can use the CLI, SDK, or the DotNS web interface.
+        In practice this is a single
+        <span class="font-mono text-dot-accent">setSubnodeOwner</span> transaction carrying the
+        parent node, the subdomain label, and the new owner address. You can send it from the CLI,
+        the SDK, or the DotNS web interface.
       </p>
     </div>
 
@@ -107,9 +102,10 @@
       </p>
       <DocCodeBlock :code="subdomainContent" lang="bash" filename="Terminal" />
       <p class="text-dot-text-secondary leading-relaxed">
-        The dweb gateway resolves subdomains the same way it resolves base domains. Visit
-        <code class="text-dot-accent">blog.alice.paseo.li</code> and it serves whatever content hash
-        is set on that subname's node.
+        dot.li resolves subdomains the same way it resolves base domains. Open
+        <code class="text-dot-accent">blog.alice.dot.li</code> (or
+        <code class="text-dot-accent">blog.alice.paseo.li</code> on Paseo) and it renders whatever
+        content hash is set on that subname's node.
       </p>
     </div>
 
@@ -135,8 +131,15 @@ const subnodeHashCode = `// The node for blog.alice.dot:
 bytes32 aliceNode = keccak256(abi.encodePacked(DOT_NODE, keccak256("alice")));
 bytes32 blogNode  = keccak256(abi.encodePacked(aliceNode, keccak256("blog")));
 
-// In the Registry:
-registry.setSubnodeOwner(aliceNode, keccak256("blog"), newOwner);`;
+// In the Registry — pass the labels as plain strings inside a struct:
+registry.setSubnodeOwner(
+    IDotnsRegistry.SubnodeRecord({
+        parentNode: aliceNode,
+        subLabel: "blog",
+        parentLabel: "alice",
+        owner: newOwner
+    })
+);`;
 
 const cliCode = `# Create a subdomain owned by yourself
 dotns register subname --name blog --parent alice
@@ -144,16 +147,23 @@ dotns register subname --name blog --parent alice
 # Create a subdomain owned by someone else
 dotns register subname --name team --parent mydao --owner 0x1234...`;
 
-const programmaticCode = `import { encodeFunctionData, namehash, keccak256, toBytes } from "viem";
+const programmaticCode = `import { encodeFunctionData, namehash } from "viem";
 
 const parentNode = namehash("alice.dot");
-const label = keccak256(toBytes("blog"));
 const newOwner = "0x1234...";
 
 const data = encodeFunctionData({
   abi: registryAbi,
   functionName: "setSubnodeOwner",
-  args: [parentNode, label, newOwner],
+  // Single struct argument with the labels as plain strings
+  args: [
+    {
+      parentNode,
+      subLabel: "blog",
+      parentLabel: "alice",
+      owner: newOwner,
+    },
+  ],
 });
 
 await walletClient.sendTransaction({
