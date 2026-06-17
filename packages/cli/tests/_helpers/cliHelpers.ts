@@ -104,6 +104,12 @@ export async function runDotnsCli(
     while (stack.length > 0) {
       const current = stack.pop()!;
       current.configureOutput(outputConfiguration);
+      // Pin a wide help width so option descriptions render on a single line.
+      // Commander otherwise wraps to the terminal width (or 80 in CI), which
+      // makes substring assertions like "defaults to active" fragile whenever
+      // a longer option (e.g. the QR signer flags) widens the description
+      // column and splits the phrase across lines.
+      current.configureHelp({ helpWidth: 200 });
       for (const child of current.commands) stack.push(child);
     }
   }
