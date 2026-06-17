@@ -1,9 +1,9 @@
 {
   "targets": {
     "b7a87bf51613d89f": {
-      "asset-hub": "wss://paseo-asset-hub-next-rpc.polkadot.io",
-      "bulletin": "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs",
-      "registry": "0xf62c2ece29cd8df2e10040ecfa5a894a5c5d9cb0"
+      "asset-hub": "wss://summit-asset-hub-rpc.polkadot.io",
+      "bulletin": "https://summit-ipfs.polkadot.io/ipfs",
+      "registry": "0xa5747e60ae27f93e92019e4021abfc4957050141"
     }
   },
   "dependencies": {
