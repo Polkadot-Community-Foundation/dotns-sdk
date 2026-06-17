@@ -75,10 +75,17 @@ export function validateDomainLabel(label: string): void {
 export function validateGovernanceLabel(label: string): void {
   validateDomainLabel(label);
 
+  // `registerReserved` (governance mode) is the whitelisted/owner override for
+  // every name that the normal flow gates: reserved stems (<= 5 chars) AND the
+  // PoP tier (6-8 chars, which the docs call "PoP-Full / registerReserved-gated").
+  // The contract itself imposes no length limit on registerReserved; only stems
+  // of 9+ chars are openly registerable by anyone, so there is never a reason to
+  // take those through governance. Cap at 8 to keep the open tier on the normal
+  // priced flow.
   const baseName = stripTrailingDigits(label);
-  if (baseName.length > 5) {
+  if (baseName.length > 8) {
     throw new Error(
-      `Invalid governance label: base name must be 5 characters or fewer (got ${baseName.length})`,
+      `Invalid governance label: base name must be 8 characters or fewer (got ${baseName.length}); 9+ char names are open — use the normal registration flow`,
     );
   }
 }

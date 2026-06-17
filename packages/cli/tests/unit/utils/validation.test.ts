@@ -134,14 +134,19 @@ describe("validateDomainLabel digit-suffix rule", () => {
 });
 
 describe("validateGovernanceLabel stem-length rule", () => {
-  test("accepts stems of five characters or fewer", () => {
+  test("accepts reserved stems (<= 5 characters)", () => {
     expect(() => validateGovernanceLabel("vitalik".slice(0, 5))).not.toThrow();
     expect(() => validateGovernanceLabel("gavin")).not.toThrow();
   });
 
-  test("rejects stems longer than five characters", () => {
-    expect(() => validateGovernanceLabel("vitalik")).toThrow(
-      /base name must be 5 characters or fewer/,
+  test("accepts PoP-tier stems (6-8 characters) — the registerReserved override", () => {
+    expect(() => validateGovernanceLabel("w3spay")).not.toThrow(); // 6
+    expect(() => validateGovernanceLabel("feedback")).not.toThrow(); // 8
+  });
+
+  test("rejects stems longer than eight characters (open tier)", () => {
+    expect(() => validateGovernanceLabel("ninechars")).toThrow(
+      /base name must be 8 characters or fewer/,
     );
   });
 
