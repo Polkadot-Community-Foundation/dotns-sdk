@@ -39,14 +39,29 @@ function collectDeclaredFiles(packageJson) {
   return [...declared];
 }
 
+// `npm pack` runs the `prepare` lifecycle script (codegen) whose output lands
+// on stdout before the JSON, and --ignore-scripts is not honoured everywhere,
+// so extract the trailing JSON array rather than parsing the whole stream.
+function extractJsonArray(output) {
+  for (
+    let start = output.indexOf("[");
+    start !== -1;
+    start = output.indexOf("[", start + 1)
+  ) {
+    try {
+      return JSON.parse(output.slice(start));
+    } catch {
+      // Not the start of the JSON array; keep scanning.
+    }
+  }
+  throw new Error("could not locate JSON array in `npm pack` output");
+}
+
 function listPackedFiles() {
-  // --ignore-scripts keeps lifecycle output (e.g. codegen) out of the JSON.
-  const output = execFileSync(
-    "npm",
-    ["pack", "--dry-run", "--json", "--ignore-scripts"],
-    { encoding: "utf8" },
-  );
-  return new Set(JSON.parse(output)[0].files.map((file) => file.path));
+  const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    encoding: "utf8",
+  });
+  return new Set(extractJsonArray(output)[0].files.map((file) => file.path));
 }
 
 function main() {
