@@ -146,7 +146,7 @@ export const PASEO_BULLETIN_PEERS: readonly string[] = [
   "/dns4/paseo-bulletin-next-rpc-node-1.polkadot.io/tcp/443/wss/p2p/12D3KooWKMc4jJsU7fdEsis4AsM8Assk5jFqhEUEa2ZSiWJGKpfv",
 ];
 
-export const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet", "summit"] as const;
+export const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "paseo-next", "previewnet", "summit"] as const;
 export type DotnsEnvironmentId = (typeof DOTNS_ENVIRONMENT_IDS)[number];
 
 export type DotnsContractAddresses = {
@@ -251,6 +251,23 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
       DOTNS_NAME_ESCROW: "0x2Cb9899d91Ee575E8917958723F5E941b1BcC6A1" as Address,
       MULTICALL3: SHARED_MULTICALL3,
     },
+    bulletinRpc: DEFAULT_BULLETIN_RPC,
+    ipfsGatewayUrl: PASEO_IPFS_GATEWAY_URL,
+    bulletinP2pPeers: PASEO_BULLETIN_PEERS,
+  },
+  // PCF-owned re-home on the same Paseo Next interim chains as paseo-v2, but
+  // resolving through PCF's OWN DotNS deployment (distinct owner key, not the
+  // pre-existing paseo-v2 registries). `contracts: null` until PCF's DotNS is
+  // deployed to AH-next 1500 — createDotnsContext throws a clear error until then.
+  "paseo-next": {
+    id: "paseo-next",
+    label: "Paseo Next (PCF)",
+    aliases: ["paseo-next", "paseo_next", "pcf-next"],
+    rpc: PASEO_ASSET_HUB_URL,
+    blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
+    // Set once PCF's dotns UI is deployed on paseo-next.
+    previewBaseUrl: null,
+    contracts: null,
     bulletinRpc: DEFAULT_BULLETIN_RPC,
     ipfsGatewayUrl: PASEO_IPFS_GATEWAY_URL,
     bulletinP2pPeers: PASEO_BULLETIN_PEERS,
