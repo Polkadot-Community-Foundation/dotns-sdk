@@ -8,10 +8,10 @@ import type { NetworkConfig } from "@/type";
 export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   420420417: {
     chainId: 420420417,
-    chainName: "Summit Asset Hub",
+    chainName: "Paseo Next Asset Hub",
     nativeCurrency: {
-      name: "Summit",
-      symbol: "SUM",
+      name: "Paseo",
+      symbol: "PAS",
       decimals: 18,
     },
     // TODO(summit): set the block explorer URL once known.
@@ -23,7 +23,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
 export const ZERO_SUBSTRATE_ADDRESS = "5DfhGyQdFobKM8NsWvEeAKk5EQQgYe9AydgJ7rMB6E1EqRzV";
 
 export const DEFAULT_NETWORK_ID = 420420417;
-export const TOKEN_UNIT = "SUM";
+export const TOKEN_UNIT = "PAS";
 // TODO(summit): set the block explorer URL once known.
 export const BLOCK_EXPLORER = "";
 
