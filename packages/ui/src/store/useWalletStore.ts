@@ -78,17 +78,22 @@ function markPermissionsGranted(h160: string): void {
 async function requestWritePermissions(account: SignerAccount): Promise<void> {
   if (hasGrantedPermissions(account.h160Address)) return;
   try {
-    const [smartContract, autoSigning] = await requestResourceAllocation([
+    const allocation = await requestResourceAllocation([
       { tag: "SmartContractAllowance", value: 0 },
       { tag: "AutoSigning", value: undefined },
     ]);
+    if (!allocation.ok) {
+      console.warn("[WalletStore:requestWritePermissions] request failed", allocation.error);
+      return;
+    }
+    const [smartContract, autoSigning] = allocation.value;
     console.log(
-      `[WalletStore:requestWritePermissions] smartContract=${smartContract?.tag} autoSigning=${autoSigning?.tag}`,
+      `[WalletStore:requestWritePermissions] smartContract=${smartContract} autoSigning=${autoSigning}`,
     );
     // SmartContractAllowance must be Allocated for Revive writes. AutoSigning is
     // accepted as Allocated or NotAvailable (host hasn't shipped it yet).
-    const smartContractOk = smartContract?.tag === "Allocated";
-    const autoSigningOk = autoSigning?.tag === "Allocated" || autoSigning?.tag === "NotAvailable";
+    const smartContractOk = smartContract === "Allocated";
+    const autoSigningOk = autoSigning === "Allocated" || autoSigning === "NotAvailable";
     if (smartContractOk && autoSigningOk) {
       markPermissionsGranted(account.h160Address);
     }
@@ -123,7 +128,8 @@ export const useWalletStore = defineStore("useWalletStore", () => {
   function ensureChainSubmit(): Promise<boolean> {
     if (!chainSubmitReady) {
       chainSubmitReady = requestPermission({ tag: "ChainSubmit", value: undefined })
-        .then((granted) => {
+        .then((result) => {
+          const granted = result.ok && result.value;
           console.log(`[WalletStore:ensureChainSubmit] chainSubmit=${granted}`);
           return granted;
         })
