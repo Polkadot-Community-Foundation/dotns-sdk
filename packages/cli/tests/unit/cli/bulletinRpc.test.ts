@@ -17,14 +17,14 @@ afterEach(() => {
   if (originalRpc === undefined) delete process.env[ENV.RPC];
   else process.env[ENV.RPC] = originalRpc;
 
-  setActiveDotnsEnvironment("summit");
+  setActiveDotnsEnvironment("devnet");
 });
 
-test("summit default resolves to its bulletin RPC", () => {
+test("devnet default resolves to its bulletin RPC", () => {
   delete process.env[ENV.DOTNS_ENV];
   delete process.env[ENV.BULLETIN_RPC];
 
-  expect(resolveBulletinRpc()).toBe("wss://summit-bulletin-rpc.polkadot.io");
+  expect(resolveBulletinRpc()).toBe("wss://bulletin-paseo.tservices.es:8443");
 });
 
 test("explicit argument wins over env var and active env", () => {

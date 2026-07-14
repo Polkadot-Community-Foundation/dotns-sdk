@@ -384,7 +384,7 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
   },
 };
 
-export const DEFAULT_DOTNS_ENVIRONMENT: DotnsEnvironmentId = "summit";
+export const DEFAULT_DOTNS_ENVIRONMENT: DotnsEnvironmentId = "devnet";
 
 let activeDotnsEnvironment: DotnsEnvironmentId = DEFAULT_DOTNS_ENVIRONMENT;
 
