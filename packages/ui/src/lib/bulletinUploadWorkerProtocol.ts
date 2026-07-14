@@ -1,4 +1,4 @@
-import type { HexString } from "@parity/product-sdk-host";
+import type { HexString } from "@polkadot-community-foundation/product-sdk-host";
 import type { CompletedChunk } from "./bulletinUpload";
 
 export type PreparedBlock = {

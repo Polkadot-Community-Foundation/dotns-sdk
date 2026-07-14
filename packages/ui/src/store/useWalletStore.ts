@@ -3,7 +3,10 @@ import { ref } from "vue";
 import { isAddress, zeroAddress, type Address } from "viem";
 import type { PolkadotSigner } from "polkadot-api";
 import { SignerManager, HostProvider, type SignerAccount } from "@parity/product-sdk-signer";
-import { requestPermission, requestResourceAllocation } from "@parity/product-sdk-host";
+import {
+  requestPermission,
+  requestResourceAllocation,
+} from "@polkadot-community-foundation/product-sdk-host";
 import { useUserStoreManager } from "./useUserStoreManager";
 import { getChainClient } from "@/composables/useTypedAPI";
 import { getSelfDotNs } from "@/lib/selfDotNs";
