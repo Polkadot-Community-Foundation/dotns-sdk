@@ -438,7 +438,7 @@ jobs:
   deploy-production:
     name: Deploy Production
     # Off by default on the PCF fork: Parity UI production hosting, pinned to
-    # env: summit and needs Parity deploy secrets. Retarget to a Summit UI and
+    # env: devnet and needs Parity deploy secrets. Retarget to a PCF UI and
     # set repo variable ENABLE_PROD_DEPLOY=true to re-enable.
     if: github.event_name == 'push' && !contains(github.ref_name, '-') && vars.ENABLE_PROD_DEPLOY == 'true'
     needs: [build-ui]
@@ -448,7 +448,7 @@ jobs:
       mode: production
       artifact-name: ui-site
       cli-source: release
-      env: summit
+      env: devnet
     secrets:
       dotns-mnemonic: ${{ secrets.DOTNS_MNEMONIC }}
       bulletin-mnemonic: ${{ secrets.DOTNS_MNEMONIC_DEPLOY_UI }}
