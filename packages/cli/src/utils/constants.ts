@@ -16,7 +16,7 @@ import DotnsPopController from "../../abis/DotnsPopController.json" with { type:
 
 // dot.li serves a name as a gateway subdomain: strip the .dot TLD and append the
 // gateway domain (mainnet dot.li, Paseo testnet paseo.li).
-const DOTLI_GATEWAYS = ["dot.li", "paseo.li"] as const;
+const DOTLI_GATEWAYS = ["dot.li", "paseo.li", "dev-dot.li"] as const;
 
 /** Both dot.li viewing URLs for a name, e.g. ["https://alice.dot.li", "https://alice.paseo.li"]. */
 export function dotliViewUrls(name: string): string[] {
@@ -26,6 +26,7 @@ export function dotliViewUrls(name: string): string[] {
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
 export const SUMMIT_ASSET_HUB_URL = "wss://summit-asset-hub-rpc.polkadot.io";
+export const DEVNET_ASSET_HUB_URL = "wss://asset-hub-paseo-rpc.n.dwellir.com";
 export const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
 export const PERSONHOOD_PRECOMPILE_ADDRESS =
   "0x000000000000000000000000000000000a010000" as Address;
@@ -34,6 +35,8 @@ export const PERSONHOOD_CONTEXT =
 export const DEFAULT_BULLETIN_RPC = "wss://paseo-bulletin-next-rpc.polkadot.io";
 export const SUMMIT_BULLETIN_RPC = "wss://summit-bulletin-rpc.polkadot.io";
 export const SUMMIT_IPFS_GATEWAY_URL = "https://summit-ipfs.polkadot.io/ipfs";
+export const DEVNET_BULLETIN_RPC = "wss://bulletin-paseo.tservices.es:8443";
+export const DEVNET_IPFS_GATEWAY_URL = "https://bullet.sik.rocks/ipfs";
 export const DEFAULT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 // Chain MaxTransactionSize; larger single uploads must be chunked.
 export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
@@ -146,7 +149,13 @@ export const PASEO_BULLETIN_PEERS: readonly string[] = [
   "/dns4/paseo-bulletin-next-rpc-node-1.polkadot.io/tcp/443/wss/p2p/12D3KooWKMc4jJsU7fdEsis4AsM8Assk5jFqhEUEa2ZSiWJGKpfv",
 ];
 
-export const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "paseo-next", "previewnet", "summit"] as const;
+export const DOTNS_ENVIRONMENT_IDS = [
+  "paseo-v2",
+  "paseo-next",
+  "previewnet",
+  "summit",
+  "devnet",
+] as const;
 export type DotnsEnvironmentId = (typeof DOTNS_ENVIRONMENT_IDS)[number];
 
 export type DotnsContractAddresses = {
@@ -341,6 +350,36 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     bulletinRpc: SUMMIT_BULLETIN_RPC,
     ipfsGatewayUrl: SUMMIT_IPFS_GATEWAY_URL,
     // TODO(summit): set the bulletin P2P peers if/when operated.
+    bulletinP2pPeers: [],
+  },
+  // Public products devnet (standard Paseo Asset Hub 1000 / Bulletin). PCF's own
+  // DotNS deployment; address book below reflects the deployed contracts.
+  devnet: {
+    id: "devnet",
+    label: "Devnet",
+    aliases: ["devnet", "dev"],
+    rpc: DEVNET_ASSET_HUB_URL,
+    // TODO(devnet): set the real block explorer URL once known.
+    blockExplorerUrl: "",
+    // No devnet-hosted dotns preview gateway yet; set once one exists.
+    previewBaseUrl: null,
+    contracts: {
+      DOTNS_REGISTRAR: "0x7f0dF075cc8B7FE7218E90fFC5a553450dB120F3" as Address,
+      DOTNS_REGISTRAR_CONTROLLER: "0x45fDEa4Ad7b8607Fc22DBC3DBE3cD8b350F8bede" as Address,
+      DOTNS_REGISTRY: "0x527b08a640b527a3dae0C4BE04D7344E430B6E50" as Address,
+      DOTNS_RESOLVER: "0xC28796526Bf3E9295f09655a1001F30f77AfCF0D" as Address,
+      DOTNS_REVERSE_RESOLVER: "0xfd2594FcF920B38A970011C486e1E3041563147F" as Address,
+      DOTNS_POP_RESOLVER: "0x92Fd4195Be40A266d2914FB64C63cC50715dB1D8" as Address,
+      DOTNS_CONTENT_RESOLVER: "0x326bdE29315199c814B1c58b431D84D16EA5cE41" as Address,
+      STORE_FACTORY: "0xD81DC23FAa69B311C1FC553Ea63798772e7D253D" as Address,
+      DOTNS_RULES: "0x2181a14081fF2D4477BAA8FB1aEB4C9c44F5F2b0" as Address,
+      DOTNS_POP_CONTROLLER: "0x1884819F6747576883805Cb2b7BB68d29484d1b0" as Address,
+      DOTNS_NAME_ESCROW: "0xfEdBe7a7F32017F6bCAA3109bE2EaC7D59E319E5" as Address,
+      MULTICALL3: "0x929EdB8d61461c29d07deC834ef747EbFDcf0B74" as Address,
+    },
+    bulletinRpc: DEVNET_BULLETIN_RPC,
+    ipfsGatewayUrl: DEVNET_IPFS_GATEWAY_URL,
+    // TODO(devnet): set the bulletin P2P peers if/when operated.
     bulletinP2pPeers: [],
   },
 };
