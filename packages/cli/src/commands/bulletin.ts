@@ -51,6 +51,7 @@ import {
   BULLETIN_BLOCK_TIME_MS,
   DEFAULT_UPLOAD_MAX_RETRIES,
   MAX_SINGLE_UPLOAD_SIZE_BYTES,
+  getActiveDotnsEnvironment,
 } from "../utils/constants";
 import { formatErrorMessage, formatBytes, formatDuration } from "../utils/formatting";
 
@@ -935,7 +936,11 @@ export async function storeDirectory(
     accountAddress,
     onPhase,
     onRetry,
-    verificationGateway = DEFAULT_VERIFICATION_GATEWAY,
+    // Verify against the active environment's gateway (falls back to the
+    // paseo default only when the env has none), so a --env deploy verifies
+    // on that env's gateway instead of always hitting paseo.
+    verificationGateway = getActiveDotnsEnvironment().ipfsGatewayUrl ??
+      DEFAULT_VERIFICATION_GATEWAY,
     maxRetries = DEFAULT_UPLOAD_MAX_RETRIES,
     waitForFinalization = false,
   } = options;
