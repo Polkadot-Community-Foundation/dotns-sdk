@@ -86,7 +86,6 @@ jobs:
           PREVIEW_URL: ${{ needs.deploy.outputs.url || '' }}
           PREVIEW_URL_DIRECT: ${{ needs.deploy.outputs.url-direct || '' }}
           PREVIEW_URL_DOTLI: ${{ needs.deploy.outputs.url-dotli || '' }}
-          PREVIEW_URL_DOTLI_PASEO: ${{ needs.deploy.outputs.url-dotli-paseo || '' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
@@ -100,7 +99,6 @@ jobs:
             const previewUrl = process.env.PREVIEW_URL;
             const previewUrlDirect = process.env.PREVIEW_URL_DIRECT;
             const previewUrlDotli = process.env.PREVIEW_URL_DOTLI;
-            const previewUrlDotliPaseo = process.env.PREVIEW_URL_DOTLI_PASEO;
             const runUrl = process.env.RUN_URL;
 
             const { owner, repo } = context.repo;
@@ -142,10 +140,7 @@ jobs:
 
             const previewRows = [];
             if (previewUrlDotli) {
-              previewRows.push(`| Preview (dot.li) | [open](${previewUrlDotli}) |`);
-            }
-            if (previewUrlDotliPaseo) {
-              previewRows.push(`| Preview (paseo.li) | [open](${previewUrlDotliPaseo}) |`);
+              previewRows.push(`| Preview (gateway) | [open](${previewUrlDotli}) |`);
             }
             if (previewUrlDirect) {
               previewRows.push(`| Preview (direct) | [open](${previewUrlDirect}) |`);

@@ -142,7 +142,6 @@ jobs:
           DEPLOY_URL: ${{ needs.deploy.outputs.url }}
           DEPLOY_URL_DIRECT: ${{ needs.deploy.outputs.url-direct }}
           DEPLOY_URL_DOTLI: ${{ needs.deploy.outputs.url-dotli }}
-          DEPLOY_URL_DOTLI_PASEO: ${{ needs.deploy.outputs.url-dotli-paseo }}
           DEPLOY_CACHE_HIT: ${{ needs.deploy.outputs.cache-hit }}
           DEPLOY_DURATION_SECONDS: ${{ needs.deploy.outputs.duration-seconds }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -184,7 +183,6 @@ jobs:
             const url = process.env.DEPLOY_URL;
             const urlDirect = process.env.DEPLOY_URL_DIRECT;
             const urlDotli = process.env.DEPLOY_URL_DOTLI;
-            const urlDotliPaseo = process.env.DEPLOY_URL_DOTLI_PASEO;
             const cacheHit = process.env.DEPLOY_CACHE_HIT === "true";
             const durationSeconds = process.env.DEPLOY_DURATION_SECONDS;
 
@@ -280,10 +278,7 @@ jobs:
               const cidDisplay = cacheHit ? `\`${cid}\` (cached)` : `\`${cid}\``;
               const urlRows = [];
               if (urlDotli) {
-                urlRows.push(`| URL (dot.li) | [${urlDotli}](${urlDotli}) |`);
-              }
-              if (urlDotliPaseo) {
-                urlRows.push(`| URL (paseo.li) | [${urlDotliPaseo}](${urlDotliPaseo}) |`);
+                urlRows.push(`| URL (gateway) | [${urlDotli}](${urlDotli}) |`);
               }
               if (urlDirect) {
                 urlRows.push(`| URL (direct) | [${urlDirect}](${urlDirect}) |`);

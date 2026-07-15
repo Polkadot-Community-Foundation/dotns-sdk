@@ -14,14 +14,17 @@ import LabelStore from "../../abis/LabelStore.json" with { type: "json" };
 import UserStore from "../../abis/UserStore.json" with { type: "json" };
 import DotnsPopController from "../../abis/DotnsPopController.json" with { type: "json" };
 
-// dot.li serves a name as a gateway subdomain: strip the .dot TLD and append the
-// gateway domain (mainnet dot.li, Paseo testnet paseo.li).
-const DOTLI_GATEWAYS = ["dot.li", "paseo.li", "dev-dot.li"] as const;
+// A dot.li-style gateway serves a name as a subdomain: strip the .dot TLD and
+// append the gateway domain. The gateway is per-environment config (each env's
+// `dotliGateways`, e.g. dev-dot.li on devnet, dot.li on summit), so moving the
+// gateway is a config change, not a code change.
 
-/** Both dot.li viewing URLs for a name, e.g. ["https://alice.dot.li", "https://alice.paseo.li"]. */
+/** dot.li-style viewing URLs for a name on the ACTIVE environment's gateway(s),
+ *  e.g. ["https://alice.dev-dot.li"] on devnet. Empty when the environment has
+ *  no dot.li-style gateway (e.g. previewnet). */
 export function dotliViewUrls(name: string): string[] {
   const stem = normaliseLabel(name);
-  return DOTLI_GATEWAYS.map((gateway) => `https://${stem}.${gateway}`);
+  return getActiveDotnsEnvironment().dotliGateways.map((gateway) => `https://${stem}.${gateway}`);
 }
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
@@ -214,6 +217,13 @@ export type DotnsEnvironmentConfig = {
    */
   previewBaseUrl: string | null;
   /**
+   * dot.li-style web gateway domain(s) this environment's names are served
+   * through, e.g. `["dev-dot.li"]` on devnet, `["dot.li"]` on summit. A name
+   * `alice.dot` is reachable at `https://alice.<gateway>`. Empty for
+   * environments served only via a non-dot.li gateway (e.g. previewnet).
+   */
+  dotliGateways: readonly string[];
+  /**
    * Contract address book. `null` when contracts have not been deployed to (or
    * recorded for) this environment; createDotnsContext throws in that case.
    */
@@ -246,6 +256,7 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     rpc: RPC_ENDPOINTS[0],
     blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
     previewBaseUrl: "https://dotns.paseo.li/#/preview",
+    dotliGateways: ["paseo.li"],
     contracts: {
       DOTNS_REGISTRAR: "0xf7Ad3F44F316C73E4a2b46b1ed48d376bCc9E639" as Address,
       DOTNS_REGISTRAR_CONTROLLER: "0x674b705268DAE369F0a7BE9cbaCDb928b8BA38C2" as Address,
@@ -276,6 +287,7 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
     // Set once PCF's dotns UI is deployed on paseo-next.
     previewBaseUrl: null,
+    dotliGateways: ["dot.li"],
     // PCF DotNS deployed + verified on-chain (owner 0x8C78b53f; manifest
     // dotns deployments/paseo-next-asset-hub/420420417.json).
     contracts: {
@@ -303,6 +315,8 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     rpc: PREVIEWNET_ASSET_HUB_URL,
     blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
     previewBaseUrl: null,
+    // previewnet is served via its own substrate.dev gateway, not a dot.li domain.
+    dotliGateways: [],
     contracts: {
       DOTNS_REGISTRAR: "0x061273AeF34e8ab9Ca08E199d7440E2639Fc2088" as Address,
       DOTNS_REGISTRAR_CONTROLLER: "0xC0c21ca6302884572E61d69D5bf3E271Acf39B23" as Address,
@@ -333,6 +347,7 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     blockExplorerUrl: "",
     // No Summit-hosted dotns preview gateway yet; set once one exists.
     previewBaseUrl: null,
+    dotliGateways: ["dot.li"],
     contracts: {
       DOTNS_REGISTRAR: "0xf3969bCBE60463302306663C62A6A8ef91ab9aA5" as Address,
       DOTNS_REGISTRAR_CONTROLLER: "0xA68a5b2A6be6d014be0dB07c0ed4bacc4A6A570A" as Address,
@@ -363,6 +378,7 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     blockExplorerUrl: "",
     // No devnet-hosted dotns preview gateway yet; set once one exists.
     previewBaseUrl: null,
+    dotliGateways: ["dev-dot.li"],
     contracts: {
       DOTNS_REGISTRAR: "0x7f0dF075cc8B7FE7218E90fFC5a553450dB120F3" as Address,
       DOTNS_REGISTRAR_CONTROLLER: "0x45fDEa4Ad7b8607Fc22DBC3DBE3cD8b350F8bede" as Address,

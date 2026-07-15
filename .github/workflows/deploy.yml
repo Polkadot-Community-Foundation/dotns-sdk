@@ -141,8 +141,6 @@ on:
         value: ${{ jobs.deploy.outputs.url-direct }}
       url-dotli:
         value: ${{ jobs.deploy.outputs.url-dotli }}
-      url-dotli-paseo:
-        value: ${{ jobs.deploy.outputs.url-dotli-paseo }}
       cache-hit:
         value: ${{ jobs.deploy.outputs.cache-hit }}
       duration-seconds:
@@ -166,7 +164,6 @@ jobs:
       url-alt: ${{ steps.final.outputs.url-alt }}
       url-direct: ${{ steps.final.outputs.url-direct }}
       url-dotli: ${{ steps.final.outputs.url-dotli }}
-      url-dotli-paseo: ${{ steps.final.outputs.url-dotli-paseo }}
       cache-hit: ${{ steps.cache.outputs.cache-hit }}
       duration-seconds: ${{ steps.duration.outputs.seconds }}
 
@@ -390,24 +387,34 @@ jobs:
       - name: Set outputs
         id: final
         run: |
-          # dot.li serves a name as a gateway subdomain: strip the .dot TLD and
-          # append the gateway domain (mainnet dot.li, Paseo testnet paseo.li).
-          # e.g. pr170.dotns.dot -> pr170.dotns.dot.li / pr170.dotns.paseo.li
+          # A dot.li-style gateway serves a name as a subdomain: strip the .dot TLD
+          # and append the per-environment gateway domain. Keep this map in sync with
+          # packages/cli/src/utils/constants.ts `dotliGateways`.
+          # e.g. devnet: pr170.dotns.dot -> https://pr170.dotns.dev-dot.li
           STEM="${FQDN%.dot}"
-          DOTLI_URL="https://${STEM}.dot.li"
-          DOTLI_PASEO_URL="https://${STEM}.paseo.li"
+          case "$DEPLOY_ENV" in
+            devnet)             GATEWAY="dev-dot.li" ;;
+            summit|paseo-next)  GATEWAY="dot.li" ;;
+            paseo-v2)           GATEWAY="paseo.li" ;;
+            *)                  GATEWAY="" ;;  # previewnet / unknown: no dot.li gateway
+          esac
           DIRECT_URL="https://${FQDN}"
+          if [[ -n "$GATEWAY" ]]; then
+            GATEWAY_URL="https://${STEM}.${GATEWAY}"
+          else
+            GATEWAY_URL="$DIRECT_URL"
+          fi
 
           echo "cid=$CID" >> "$GITHUB_OUTPUT"
           echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
-          echo "url=$DOTLI_URL" >> "$GITHUB_OUTPUT"
+          echo "url=$GATEWAY_URL" >> "$GITHUB_OUTPUT"
           echo "url-alt=$DIRECT_URL" >> "$GITHUB_OUTPUT"
           echo "url-direct=$DIRECT_URL" >> "$GITHUB_OUTPUT"
-          echo "url-dotli=$DOTLI_URL" >> "$GITHUB_OUTPUT"
-          echo "url-dotli-paseo=$DOTLI_PASEO_URL" >> "$GITHUB_OUTPUT"
+          echo "url-dotli=$GATEWAY_URL" >> "$GITHUB_OUTPUT"
         env:
           CID: ${{ steps.cid.outputs.cid }}
           FQDN: ${{ steps.target.outputs.fqdn }}
+          DEPLOY_ENV: ${{ inputs.env }}
 
       - name: Compute deploy duration
         id: duration
@@ -432,8 +439,7 @@ jobs:
           fi
 
           URL_ROWS=$(cat <<EOF
-          | URL (dot.li) | [${URL_DOTLI}](${URL_DOTLI}) |
-          | URL (paseo.li) | [${URL_DOTLI_PASEO}](${URL_DOTLI_PASEO}) |
+          | URL (gateway) | [${URL_DOTLI}](${URL_DOTLI}) |
           | URL (direct) | [${URL_DIRECT}](${URL_DIRECT}) |
           EOF
           )
@@ -456,7 +462,6 @@ jobs:
           CID: ${{ steps.final.outputs.cid }}
           URL_DIRECT: ${{ steps.final.outputs.url-direct }}
           URL_DOTLI: ${{ steps.final.outputs.url-dotli }}
-          URL_DOTLI_PASEO: ${{ steps.final.outputs.url-dotli-paseo }}
           DURATION_SECONDS: ${{ steps.duration.outputs.seconds }}
           BULLETIN_MNEMONIC: ${{ secrets.bulletin-mnemonic }}
           CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
