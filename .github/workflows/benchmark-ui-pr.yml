@@ -57,7 +57,7 @@ jobs:
       mode: preview
       subname: pr${{ github.event.pull_request.number }}-ui
       register-base: true
-      env: summit
+      env: devnet
       cli-source: source
       sdk-ref: ${{ github.head_ref || github.ref }}
       skip-cache: true

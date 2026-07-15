@@ -183,7 +183,7 @@ jobs:
       mode: preview
       subname: dotns-ui
       register-base: true
-      env: summit
+      env: devnet
       cli-source: release
       sdk-ref: ${{ github.head_ref || github.ref }}
       skip-cache: true

@@ -7,8 +7,9 @@ on:
         description: "DotNS environment"
         required: false
         type: choice
-        default: summit
+        default: devnet
         options:
+          - devnet
           - summit
           - paseo-v2
           - previewnet

@@ -11,7 +11,7 @@ inputs:
   env:
     description: "DotNS environment"
     required: false
-    default: "summit"
+    default: "devnet"
   basename:
     description: "Base domain without .dot"
     required: true

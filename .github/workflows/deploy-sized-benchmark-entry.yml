@@ -44,7 +44,7 @@ on:
         description: "DotNS environment (summit | paseo-v2 | previewnet)"
         required: false
         type: string
-        default: summit
+        default: devnet
 
     secrets:
       dotns-mnemonic:
