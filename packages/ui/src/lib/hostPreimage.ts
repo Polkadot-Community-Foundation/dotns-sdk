@@ -1,4 +1,7 @@
-import { getPreimageManager, type HexString } from "@parity/product-sdk-host";
+import {
+  getPreimageManager,
+  type HexString,
+} from "@polkadot-community-foundation/product-sdk-host";
 import { CID } from "multiformats/cid";
 import { blake2b } from "@noble/hashes/blake2.js";
 import { HASH_BLAKE2B_256, CODEC_RAW, CODEC_DAG_PB } from "./bulletinUpload";

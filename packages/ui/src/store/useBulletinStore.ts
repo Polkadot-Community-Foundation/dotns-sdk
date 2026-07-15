@@ -1,6 +1,9 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { getPreimageManager, type HexString } from "@parity/product-sdk-host";
+import {
+  getPreimageManager,
+  type HexString,
+} from "@polkadot-community-foundation/product-sdk-host";
 import { useUserStoreManager } from "./useUserStoreManager";
 import type { BulletinUploadResult } from "@/type";
 import type { CidVerificationResult } from "@/lib/ipfs";
