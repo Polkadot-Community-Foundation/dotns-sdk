@@ -36,7 +36,7 @@ export const DEFAULT_BULLETIN_RPC = "wss://paseo-bulletin-next-rpc.polkadot.io";
 export const SUMMIT_BULLETIN_RPC = "wss://summit-bulletin-rpc.polkadot.io";
 export const SUMMIT_IPFS_GATEWAY_URL = "https://summit-ipfs.polkadot.io/ipfs";
 export const DEVNET_BULLETIN_RPC = "wss://bulletin-paseo.tservices.es:8443";
-export const DEVNET_IPFS_GATEWAY_URL = "https://bullet.sik.rocks/ipfs";
+export const DEVNET_IPFS_GATEWAY_URL = "https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs";
 export const DEFAULT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 // Chain MaxTransactionSize; larger single uploads must be chunked.
 export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
