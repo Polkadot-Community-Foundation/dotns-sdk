@@ -80,7 +80,7 @@ on:
         description: "DotNS environment (summit | paseo-v2 | previewnet)"
         required: false
         type: string
-        default: "summit"
+        default: "devnet"
 
       upload-concurrency:
         description: "Adaptive scheduler max window (max: 4)"
