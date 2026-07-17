@@ -26,6 +26,13 @@ export function dotliViewUrls(name: string): string[] {
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
 const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
+
+// Public Products Devnet — Paseo Asset Hub (para 1000, chain 420420417). The
+// bundled `paseo` descriptor is already built from this chain's genesis; these
+// endpoints wire a named preset to it.
+export const DEVNET_ASSET_HUB_URL = "wss://asset-hub-paseo-rpc.n.dwellir.com";
+export const DEVNET_BULLETIN_RPC = "wss://bulletin-paseo.tservices.es:8443";
+export const DEVNET_IPFS_GATEWAY_URL = "https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs";
 export const PERSONHOOD_PRECOMPILE_ADDRESS =
   "0x000000000000000000000000000000000a010000" as Address;
 export const PERSONHOOD_CONTEXT =
@@ -143,7 +150,7 @@ export const PASEO_BULLETIN_PEERS: readonly string[] = [
   "/dns4/paseo-bulletin-next-rpc-node-1.polkadot.io/tcp/443/wss/p2p/12D3KooWKMc4jJsU7fdEsis4AsM8Assk5jFqhEUEa2ZSiWJGKpfv",
 ];
 
-const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet"] as const;
+const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet", "devnet"] as const;
 export type DotnsEnvironmentId = (typeof DOTNS_ENVIRONMENT_IDS)[number];
 
 export type DotnsContractAddresses = {
@@ -275,6 +282,33 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     },
     bulletinRpc: "wss://previewnet.substrate.dev/bulletin",
     ipfsGatewayUrl: "https://previewnet.substrate.dev/ipfs",
+    bulletinP2pPeers: [],
+  },
+  devnet: {
+    id: "devnet",
+    label: "Products Devnet (Paseo Asset Hub)",
+    aliases: ["devnet", "dev", "products-devnet"],
+    rpc: DEVNET_ASSET_HUB_URL,
+    // No public block explorer wired for this deployment yet.
+    blockExplorerUrl: "",
+    // No devnet-hosted dotns web app; preview-link helpers stay disabled.
+    previewBaseUrl: null,
+    contracts: {
+      DOTNS_REGISTRAR: "0x7f0dF075cc8B7FE7218E90fFC5a553450dB120F3" as Address,
+      DOTNS_REGISTRAR_CONTROLLER: "0x45fDEa4Ad7b8607Fc22DBC3DBE3cD8b350F8bede" as Address,
+      DOTNS_REGISTRY: "0x527b08a640b527a3dae0C4BE04D7344E430B6E50" as Address,
+      DOTNS_RESOLVER: "0xC28796526Bf3E9295f09655a1001F30f77AfCF0D" as Address,
+      DOTNS_REVERSE_RESOLVER: "0xfd2594FcF920B38A970011C486e1E3041563147F" as Address,
+      DOTNS_POP_RESOLVER: "0x92Fd4195Be40A266d2914FB64C63cC50715dB1D8" as Address,
+      DOTNS_CONTENT_RESOLVER: "0x326bdE29315199c814B1c58b431D84D16EA5cE41" as Address,
+      STORE_FACTORY: "0xD81DC23FAa69B311C1FC553Ea63798772e7D253D" as Address,
+      DOTNS_RULES: "0x2181a14081fF2D4477BAA8FB1aEB4C9c44F5F2b0" as Address,
+      DOTNS_POP_CONTROLLER: "0x1884819F6747576883805Cb2b7BB68d29484d1b0" as Address,
+      DOTNS_NAME_ESCROW: "0xfEdBe7a7F32017F6bCAA3109bE2EaC7D59E319E5" as Address,
+      MULTICALL3: "0x929EdB8d61461c29d07deC834ef747EbFDcf0B74" as Address,
+    },
+    bulletinRpc: DEVNET_BULLETIN_RPC,
+    ipfsGatewayUrl: DEVNET_IPFS_GATEWAY_URL,
     bulletinP2pPeers: [],
   },
 };
