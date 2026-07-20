@@ -1,8 +1,8 @@
 {
   "targets": {
     "b7a87bf51613d89f": {
-      "asset-hub": "wss://summit-asset-hub-rpc.polkadot.io",
-      "bulletin": "https://summit-ipfs.polkadot.io/ipfs",
+      "asset-hub": "wss://asset-hub-paseo-rpc.n.dwellir.com",
+      "bulletin": "wss://bulletin-paseo.tservices.es:8443",
       "registry": "0x59b0245778917af55224e5f8fb55f7f8d452619f"
     }
   },
