@@ -19,7 +19,7 @@ export function createProgram() {
   program.name("dotns").description("dotns developer CLI");
   program.version(version, "-v, --version");
   program
-    .option("--env <environment>", `DotNS environment: summit (env: ${ENV.DOTNS_ENV})`)
+    .option("--env <environment>", `DotNS environment: devnet (env: ${ENV.DOTNS_ENV})`)
     .option("--network <environment>", "Alias for --env");
   attachPopCommands(program);
   attachAuthCommands(program);

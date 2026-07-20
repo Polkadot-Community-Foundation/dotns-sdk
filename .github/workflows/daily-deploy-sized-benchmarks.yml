@@ -13,7 +13,6 @@ on:
         default: devnet
         options:
           - devnet
-          - summit
           - paseo-v2
           - previewnet
 
