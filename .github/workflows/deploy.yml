@@ -77,7 +77,7 @@ on:
         type: string
 
       env:
-        description: "DotNS environment (summit | paseo-v2 | previewnet)"
+        description: "DotNS environment (devnet | paseo-v2 | previewnet)"
         required: false
         type: string
         default: "devnet"
@@ -394,7 +394,6 @@ jobs:
           STEM="${FQDN%.dot}"
           case "$DEPLOY_ENV" in
             devnet)             GATEWAY="dev-dot.li" ;;
-            summit|paseo-next)  GATEWAY="dot.li" ;;
             paseo-v2)           GATEWAY="paseo.li" ;;
             *)                  GATEWAY="" ;;  # previewnet / unknown: no dot.li gateway
           esac

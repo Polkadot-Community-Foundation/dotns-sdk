@@ -41,7 +41,7 @@ on:
         default: ""
 
       env:
-        description: "DotNS environment (summit | paseo-v2 | previewnet)"
+        description: "DotNS environment (devnet | paseo-v2 | previewnet)"
         required: false
         type: string
         default: devnet

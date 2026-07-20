@@ -4,7 +4,7 @@ import type { AuthOptionValues } from "../../types/types";
 
 export function addAuthOptions(cmd: Command): Command {
   return cmd
-    .option("--env <environment>", `DotNS environment: summit (env: ${ENV.DOTNS_ENV})`)
+    .option("--env <environment>", `DotNS environment: devnet (env: ${ENV.DOTNS_ENV})`)
     .option("--network <environment>", "Alias for --env")
     .option("--rpc <wsUrl>", `WebSocket RPC endpoint (env: ${ENV.RPC})`)
     .option("--keystore-path <path>", `Keystore path (env: ${ENV.KEYSTORE_PATH})`)

@@ -16,7 +16,7 @@ import DotnsPopController from "../../abis/DotnsPopController.json" with { type:
 
 // A dot.li-style gateway serves a name as a subdomain: strip the .dot TLD and
 // append the gateway domain. The gateway is per-environment config (each env's
-// `dotliGateways`, e.g. dev-dot.li on devnet, dot.li on summit), so moving the
+// `dotliGateways`, e.g. dev-dot.li on devnet, paseo.li on paseo-v2), so moving the
 // gateway is a config change, not a code change.
 
 /** dot.li-style viewing URLs for a name on the ACTIVE environment's gateway(s),
@@ -28,18 +28,19 @@ export function dotliViewUrls(name: string): string[] {
 }
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
-export const SUMMIT_ASSET_HUB_URL = "wss://summit-asset-hub-rpc.polkadot.io";
+const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
+
+// Public Products Devnet — Paseo Asset Hub (para 1000, chain 420420417). The
+// bundled `paseo` descriptor is already built from this chain's genesis; these
+// endpoints wire a named preset to it.
 export const DEVNET_ASSET_HUB_URL = "wss://asset-hub-paseo-rpc.n.dwellir.com";
-export const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
+export const DEVNET_BULLETIN_RPC = "wss://bulletin-paseo.tservices.es:8443";
+export const DEVNET_IPFS_GATEWAY_URL = "https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs";
 export const PERSONHOOD_PRECOMPILE_ADDRESS =
   "0x000000000000000000000000000000000a010000" as Address;
 export const PERSONHOOD_CONTEXT =
   "0x646f746e73000000000000000000000000000000000000000000000000000000" as Hex;
 export const DEFAULT_BULLETIN_RPC = "wss://paseo-bulletin-next-rpc.polkadot.io";
-export const SUMMIT_BULLETIN_RPC = "wss://summit-bulletin-rpc.polkadot.io";
-export const SUMMIT_IPFS_GATEWAY_URL = "https://summit-ipfs.polkadot.io/ipfs";
-export const DEVNET_BULLETIN_RPC = "wss://bulletin-paseo.tservices.es:8443";
-export const DEVNET_IPFS_GATEWAY_URL = "https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs";
 export const DEFAULT_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
 // Chain MaxTransactionSize; larger single uploads must be chunked.
 export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
@@ -152,13 +153,7 @@ export const PASEO_BULLETIN_PEERS: readonly string[] = [
   "/dns4/paseo-bulletin-next-rpc-node-1.polkadot.io/tcp/443/wss/p2p/12D3KooWKMc4jJsU7fdEsis4AsM8Assk5jFqhEUEa2ZSiWJGKpfv",
 ];
 
-export const DOTNS_ENVIRONMENT_IDS = [
-  "paseo-v2",
-  "paseo-next",
-  "previewnet",
-  "summit",
-  "devnet",
-] as const;
+const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet", "devnet"] as const;
 export type DotnsEnvironmentId = (typeof DOTNS_ENVIRONMENT_IDS)[number];
 
 export type DotnsContractAddresses = {
@@ -218,7 +213,7 @@ export type DotnsEnvironmentConfig = {
   previewBaseUrl: string | null;
   /**
    * dot.li-style web gateway domain(s) this environment's names are served
-   * through, e.g. `["dev-dot.li"]` on devnet, `["dot.li"]` on summit. A name
+   * through, e.g. `["dev-dot.li"]` on devnet, `["paseo.li"]` on paseo-v2. A name
    * `alice.dot` is reachable at `https://alice.<gateway>`. Empty for
    * environments served only via a non-dot.li gateway (e.g. previewnet).
    */
@@ -275,39 +270,6 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     ipfsGatewayUrl: PASEO_IPFS_GATEWAY_URL,
     bulletinP2pPeers: PASEO_BULLETIN_PEERS,
   },
-  // PCF-owned re-home on the same Paseo Next interim chains as paseo-v2, but
-  // resolving through PCF's OWN DotNS deployment (distinct owner key, not the
-  // pre-existing paseo-v2 registries). `contracts: null` until PCF's DotNS is
-  // deployed to AH-next 1500 — createDotnsContext throws a clear error until then.
-  "paseo-next": {
-    id: "paseo-next",
-    label: "Paseo Next (PCF)",
-    aliases: ["paseo-next", "paseo_next", "pcf-next"],
-    rpc: PASEO_ASSET_HUB_URL,
-    blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
-    // Set once PCF's dotns UI is deployed on paseo-next.
-    previewBaseUrl: null,
-    dotliGateways: ["dot.li"],
-    // PCF DotNS deployed + verified on-chain (owner 0x8C78b53f; manifest
-    // dotns deployments/paseo-next-asset-hub/420420417.json).
-    contracts: {
-      DOTNS_REGISTRAR: "0xf3969bCBE60463302306663C62A6A8ef91ab9aA5" as Address,
-      DOTNS_REGISTRAR_CONTROLLER: "0xA68a5b2A6be6d014be0dB07c0ed4bacc4A6A570A" as Address,
-      DOTNS_REGISTRY: "0xFb7AB7E142ED0248D77198CA8722D67C1930D783" as Address,
-      DOTNS_RESOLVER: "0xC7f1C3B16BFd0c5910EE37a4a2033f4506AcE94d" as Address,
-      DOTNS_REVERSE_RESOLVER: "0x5aa444C6cbA9bd703d1a0B5E5C643FB886F80bB4" as Address,
-      DOTNS_POP_RESOLVER: "0x03FD2ed7B1b848c59A2428224162dE00D11a8133" as Address,
-      DOTNS_CONTENT_RESOLVER: "0xf110e5799c3f0adb8ED885C02c45Ecfe7fD86226" as Address,
-      STORE_FACTORY: "0x2947af3CBFb45b89610524a25921C32cB65C4C39" as Address,
-      DOTNS_RULES: "0x6331e51C9AfC73BfE12562fd160BA2c66A73f984" as Address,
-      DOTNS_POP_CONTROLLER: "0xC7DD78B145ed109092A2d1E79324E5FE219B9518" as Address,
-      DOTNS_NAME_ESCROW: "0xDbE911007f8cd9876D384b8c025d3BB157DCCcA4" as Address,
-      MULTICALL3: "0x1C1044BEa5bDe0F435436bB52A8340fBE1D59847" as Address,
-    },
-    bulletinRpc: DEFAULT_BULLETIN_RPC,
-    ipfsGatewayUrl: PASEO_IPFS_GATEWAY_URL,
-    bulletinP2pPeers: PASEO_BULLETIN_PEERS,
-  },
   previewnet: {
     id: "previewnet",
     label: "Paseo Asset Hub Previewnet",
@@ -335,48 +297,14 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     ipfsGatewayUrl: "https://previewnet.substrate.dev/ipfs",
     bulletinP2pPeers: [],
   },
-  // Summit reuses EVM chain id 420420417 but is a distinct network from Paseo.
-  // DotNS deployed to Summit 2026-06-07 (manifest summit-asset-hub/420420417.json);
-  // address book below. MULTICALL3 is this deploy's own instance, not the shared singleton.
-  summit: {
-    id: "summit",
-    label: "Summit",
-    aliases: ["summit"],
-    rpc: SUMMIT_ASSET_HUB_URL,
-    // TODO(summit): set the real block explorer URL once known.
-    blockExplorerUrl: "",
-    // No Summit-hosted dotns preview gateway yet; set once one exists.
-    previewBaseUrl: null,
-    dotliGateways: ["dot.li"],
-    contracts: {
-      DOTNS_REGISTRAR: "0xf3969bCBE60463302306663C62A6A8ef91ab9aA5" as Address,
-      DOTNS_REGISTRAR_CONTROLLER: "0xA68a5b2A6be6d014be0dB07c0ed4bacc4A6A570A" as Address,
-      DOTNS_REGISTRY: "0xFb7AB7E142ED0248D77198CA8722D67C1930D783" as Address,
-      DOTNS_RESOLVER: "0xC7f1C3B16BFd0c5910EE37a4a2033f4506AcE94d" as Address,
-      DOTNS_REVERSE_RESOLVER: "0x5aa444C6cbA9bd703d1a0B5E5C643FB886F80bB4" as Address,
-      DOTNS_POP_RESOLVER: "0x03FD2ed7B1b848c59A2428224162dE00D11a8133" as Address,
-      DOTNS_CONTENT_RESOLVER: "0xf110e5799c3f0adb8ED885C02c45Ecfe7fD86226" as Address,
-      STORE_FACTORY: "0x2947af3CBFb45b89610524a25921C32cB65C4C39" as Address,
-      DOTNS_RULES: "0x6331e51C9AfC73BfE12562fd160BA2c66A73f984" as Address,
-      DOTNS_POP_CONTROLLER: "0xC7DD78B145ed109092A2d1E79324E5FE219B9518" as Address,
-      DOTNS_NAME_ESCROW: "0xDbE911007f8cd9876D384b8c025d3BB157DCCcA4" as Address,
-      MULTICALL3: "0x1C1044BEa5bDe0F435436bB52A8340fBE1D59847" as Address,
-    },
-    bulletinRpc: SUMMIT_BULLETIN_RPC,
-    ipfsGatewayUrl: SUMMIT_IPFS_GATEWAY_URL,
-    // TODO(summit): set the bulletin P2P peers if/when operated.
-    bulletinP2pPeers: [],
-  },
-  // Public products devnet (standard Paseo Asset Hub 1000 / Bulletin). PCF's own
-  // DotNS deployment; address book below reflects the deployed contracts.
   devnet: {
     id: "devnet",
-    label: "Devnet",
-    aliases: ["devnet", "dev"],
+    label: "Products Devnet (Paseo Asset Hub)",
+    aliases: ["devnet", "dev", "products-devnet"],
     rpc: DEVNET_ASSET_HUB_URL,
-    // TODO(devnet): set the real block explorer URL once known.
+    // No public block explorer wired for this deployment yet.
     blockExplorerUrl: "",
-    // No devnet-hosted dotns preview gateway yet; set once one exists.
+    // No devnet-hosted dotns web app; preview-link helpers stay disabled.
     previewBaseUrl: null,
     dotliGateways: ["dev-dot.li"],
     contracts: {
@@ -395,7 +323,6 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     },
     bulletinRpc: DEVNET_BULLETIN_RPC,
     ipfsGatewayUrl: DEVNET_IPFS_GATEWAY_URL,
-    // TODO(devnet): set the bulletin P2P peers if/when operated.
     bulletinP2pPeers: [],
   },
 };
