@@ -53,9 +53,44 @@ import {
   MAX_SINGLE_UPLOAD_SIZE_BYTES,
   getActiveDotnsEnvironment,
 } from "../utils/constants";
-import { formatErrorMessage, formatBytes, formatDuration } from "../utils/formatting";
+import {
+  formatErrorMessage,
+  formatBytes,
+  formatDuration,
+  formatDispatchError,
+} from "../utils/formatting";
+import { encodeAddress } from "@polkadot/util-crypto";
 
 const U32_MAX = 0xffff_ffffn;
+const SUBSTRATE_SS58_PREFIX = 42;
+const AUTHORIZE_FAILURE_PREFIX = "Bulletin authorization was rejected: ";
+
+// Turn a decoded dispatch error from an `authorize_account` failure into an actionable
+// message. The two failures builders actually hit are budget exhaustion (the signing
+// authorizer can't delegate the requested quota) and the signer not being an authorizer
+// at all — both otherwise surface as an opaque "rejected by the chain".
+function describeAuthorizeFailure(
+  dispatchError: unknown,
+  transactions: number,
+  bytes: bigint,
+): string {
+  const detail = formatDispatchError(dispatchError);
+  const serialized = JSON.stringify(dispatchError ?? "");
+  let hint = "";
+  if (serialized.includes("InsufficientAuthorizerBudget")) {
+    hint =
+      `\nThe signing authorizer does not have enough remaining budget to grant ` +
+      `${transactions.toLocaleString()} transactions / ${formatBytes(bytes)}. ` +
+      `Request a smaller grant with --transactions / --bytes, or sign with an ` +
+      `authorizer key that has more budget via -k / --key-uri.`;
+  } else if (serialized.includes("NotAuthorizer") || serialized.includes("BadOrigin")) {
+    hint =
+      `\nThe signer is not an Authorizer on this Bulletin chain. Obtain storage ` +
+      `authorization from the Bulletin Chain Console faucet, or sign with an ` +
+      `authorizer key via -k / --key-uri.`;
+  }
+  return `${AUTHORIZE_FAILURE_PREFIX}${detail}.${hint}`;
+}
 
 export function clampU32(value: bigint | number, fieldName: string): number {
   const asBigInt = typeof value === "bigint" ? value : BigInt(value);
@@ -512,6 +547,38 @@ export async function authorizeAccount(
       bytes,
     });
 
+    // Pre-flight: dry-run the authorization so authority / budget failures surface with
+    // the real dispatch error BEFORE we sign and submit a doomed extrinsic. Best-effort —
+    // chains without DryRunApi just fall through to submit (the finalized handler decodes
+    // any failure there too).
+    let dryRunError: unknown;
+    try {
+      const origin = {
+        type: "system" as const,
+        value: {
+          type: "Signed" as const,
+          value: encodeAddress(signer.publicKey, SUBSTRATE_SS58_PREFIX),
+        },
+      };
+      // 3rd arg is the XCM version for decoding forwarded XCMs; authorize_account
+      // forwards none, so the value is immaterial.
+      const dryRun = await typedApi.apis.DryRunApi.dry_run_call(
+        origin,
+        authTransaction.decodedCall,
+        4,
+      );
+      if (dryRun.success && dryRun.value.execution_result.success === false) {
+        dryRunError = dryRun.value.execution_result.value.error;
+      }
+    } catch {
+      // DryRunApi unavailable on this chain — proceed to submit.
+    }
+    if (dryRunError !== undefined) {
+      client.destroy();
+      emitPhase(onPhase, "authorize", "failure", "Authorization would be rejected");
+      throw new Error(describeAuthorizeFailure(dryRunError, transactionsU32, bytes));
+    }
+
     return await new Promise<AuthorizeAccountResult>((resolve, reject) => {
       const subscription = authTransaction.signSubmitAndWatch(signer).subscribe({
         next: (event) => {
@@ -539,7 +606,13 @@ export async function authorizeAccount(
 
               if (!event.ok) {
                 emitPhase(onPhase, "authorize", "failure", "Authorization transaction failed");
-                reject(new Error("Authorization transaction was rejected by the chain"));
+                reject(
+                  new Error(
+                    event.dispatchError
+                      ? describeAuthorizeFailure(event.dispatchError, transactionsU32, bytes)
+                      : "Authorization transaction was rejected by the chain",
+                  ),
+                );
                 return;
               }
 

@@ -47,8 +47,14 @@ export const MAX_SINGLE_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
 export const DEFAULT_UPLOAD_MAX_RETRIES = 5;
 export const MAX_UPLOAD_MAX_RETRIES = 20;
 export const UPLOAD_RETRY_BASE_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as const;
-export const DEFAULT_AUTHORIZATION_TRANSACTIONS = 1000000;
-export const DEFAULT_AUTHORIZATION_BYTES = BigInt(1073741824);
+// Default grant for `dotns bulletin authorize`. These are deliberately modest:
+// a self-serve grant is delegated from the signing account's own Authorizer budget
+// (e.g. the shared `//Eve` dev authorizer on the public devnet), and requesting more
+// than that budget fails the extrinsic with `InsufficientAuthorizerBudget`. 1000 store
+// transactions / 100 MiB comfortably covers publishing an app while staying within a
+// shared authorizer's allowance; raise per-invocation with --transactions / --bytes.
+export const DEFAULT_AUTHORIZATION_TRANSACTIONS = 1000;
+export const DEFAULT_AUTHORIZATION_BYTES = BigInt(104857600);
 export const DEFAULT_VERIFICATION_GATEWAY = PASEO_IPFS_GATEWAY_URL;
 export const DOT_NODE: Hex = "0x3fce7d1364a893e213bc4212792b517ffc88f5b13b86c8ef9c8d390c3a1370ce";
 
