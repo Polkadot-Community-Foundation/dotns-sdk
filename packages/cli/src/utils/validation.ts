@@ -19,16 +19,21 @@ export function stripTrailingDigits(label: string): string {
   return label.replace(/\d+$/, "");
 }
 
-// Normalise a name or `name.dot` to its bare lowercase label. The single label
-// normaliser used across the CLI and core operations.
-export function normaliseLabel(name: string): string {
+// Normalise a name or `name.<tld>` to its bare lowercase label. The TLD is a
+// per-deployment value, so callers that know it (from the chain) pass it in;
+// `tld` defaults to "dot" for the mainnet deployment. Stripping the correct TLD
+// suffix is what distinguishes a second-level name (`alice.paseo`) from a
+// subdomain (`sub.alice`).
+export function normaliseLabel(name: string, tld = "dot"): string {
   const raw = name.trim().toLowerCase();
-  return raw.endsWith(".dot") ? raw.slice(0, -4) : raw;
+  const suffix = `.${tld}`;
+  return raw.endsWith(suffix) ? raw.slice(0, -suffix.length) : raw;
 }
 
-// True for a single label under .dot ("alice", "alice.dot"), false for subdomains ("sub.alice").
-export function isSecondLevelDotName(name: string): boolean {
-  return normaliseLabel(name).split(".").filter(Boolean).length === 1;
+// True for a single label under the active TLD ("alice", "alice.paseo"), false
+// for subdomains ("sub.alice").
+export function isSecondLevelDotName(name: string, tld = "dot"): boolean {
+  return normaliseLabel(name, tld).split(".").filter(Boolean).length === 1;
 }
 
 // A single canonical DNS label, mirroring the contract's StringUtils._isDnsLabel
@@ -72,8 +77,22 @@ export function validateDomainLabel(label: string): void {
   }
 }
 
+/**
+ * Validates a label for the governance registration path.
+ *
+ * Intentionally does **not** delegate to {@link validateDomainLabel}: that
+ * function's trailing-digit rule mirrors PopRules, and this path does not go
+ * through PopRules. Checks the canonical label shape, a minimum length of 3, and
+ * bounds the stem to the reserved class this path exists for.
+ *
+ * `executeGovernanceRegistration` documents why each bound is or is not applied.
+ */
 export function validateGovernanceLabel(label: string): void {
-  validateDomainLabel(label);
+  validateCanonicalLabel(label, "governance label");
+
+  if (label.length < 3) {
+    throw new Error("Invalid governance label: minimum length of 3 characters");
+  }
 
   // `registerReserved` (governance mode) is the whitelisted/owner override for
   // every name that the normal flow gates: reserved stems (<= 5 chars) AND the
