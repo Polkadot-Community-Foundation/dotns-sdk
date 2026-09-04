@@ -18,6 +18,25 @@ inputs:
   bulletin-rpc:
     description: "Bulletin chain WebSocket RPC endpoint (default: CLI built-in)"
     required: false
+  authorize-transactions:
+    description: |
+      Store-transactions to grant the deployer. Deliberately far below the CLI's
+      own default of 1,000,000: an authorize_account request is charged against
+      the AUTHORIZER's AllowedAuthorizers budget, and a request larger than that
+      budget is rejected on dispatch with TransactionStorage error 23
+      `InsufficientAuthorizerBudget`. //Eve carries 84,000 on the products
+      devnet, so the 1,000,000 default can never be satisfied there.
+      For scale: the devnet deployer has used 324 transactions in its lifetime.
+    required: false
+    default: "1000"
+  authorize-bytes:
+    description: |
+      Byte allowance to grant the deployer (default 256 MiB). Same budget rule as
+      above. For scale: the devnet deployer has used ~16.6 MiB in its lifetime,
+      and a single store is capped at 2 MiB, so a site upload is a handful of
+      transactions.
+    required: false
+    default: "268435456"
   env:
     description: "DotNS environment used by cache/store operations"
     required: false
@@ -70,6 +89,7 @@ runs:
           AUTH_ARGS=(-m "$AUTHORIZER_MNEMONIC")
         fi
         ARGS=(bulletin authorize "$ADDRESS" "${AUTH_ARGS[@]}" --json --reporter stream)
+        ARGS+=(--transactions "$AUTHORIZE_TRANSACTIONS" --bytes "$AUTHORIZE_BYTES")
         [[ -n "$BULLETIN_RPC" ]] && ARGS+=(--bulletin-rpc "$BULLETIN_RPC")
 
         if run_dotns_with_retry \
@@ -92,6 +112,8 @@ runs:
         AUTHORIZER_MNEMONIC: ${{ inputs.authorizer-mnemonic }}
         DOTNS_ENV: ${{ inputs.env }}
         BULLETIN_RPC: ${{ inputs.bulletin-rpc }}
+        AUTHORIZE_TRANSACTIONS: ${{ inputs.authorize-transactions }}
+        AUTHORIZE_BYTES: ${{ inputs.authorize-bytes }}
         CI: "true"
         FORCE_COLOR: "0"
         NODE_NO_WARNINGS: "1"
