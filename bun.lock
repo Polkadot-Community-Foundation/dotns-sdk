@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "dotns-sdk",
@@ -29,6 +28,7 @@
         "@multiformats/multiaddr": "^13.0.1",
         "@noble/hashes": "^2.0.1",
         "@parity/product-sdk-terminal": "^0.5.3",
+        "@polkadot-api/descriptors": "file:.papi/descriptors",
         "@polkadot-labs/hdkd": "^0.0.26",
         "@polkadot-labs/hdkd-helpers": "^0.0.27",
         "@polkadot/keyring": "^14.0.1",
@@ -3123,6 +3123,8 @@
     "@polkadot-api/substrate-client/@polkadot-api/utils": ["@polkadot-api/utils@0.2.0", "", {}, "sha512-nY3i5fQJoAxU4n3bD7Fs208/KR2J95SGfVc58kDjbRYN5a84kWaGEqzjBNtP9oqht49POM8Bm9mbIrkvC1Bzuw=="],
 
     "@polkadot-api/ws-middleware/@polkadot-api/raw-client": ["@polkadot-api/raw-client@0.3.0", "", { "dependencies": { "@polkadot-api/json-rpc-provider": "0.2.0" } }, "sha512-u/wM9W7ugIXxBSOEV8+zvQI43b5vgSI0pvE0Rg8PV0G65BTLK0SMc2o2SQL0HtS5+bi5sw/gg4reBJ/0a4U0cw=="],
+
+    "@polkadot-community-foundation/dotns-cli/@polkadot-api/descriptors": ["@polkadot-api/descriptors@file:packages/cli/.papi/descriptors", { "peerDependencies": { "polkadot-api": ">=1.21.0" } }],
 
     "@polkadot-community-foundation/dotns-cli/@polkadot-api/descriptors": ["@polkadot-api/descriptors@file:packages/cli/.papi/descriptors", { "peerDependencies": { "polkadot-api": ">=1.21.0" } }],
 
