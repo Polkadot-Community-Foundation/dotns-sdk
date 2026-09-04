@@ -89,7 +89,14 @@ test("bulletin authorize help shows default values", async () => {
   expect(result.exitCode).toBe(HARNESS_HELP_SUCCESS_EXIT_CODE);
 
   expect(collapseWhitespace(result.combinedOutput)).toContain("defaults to active");
-  expect(result.combinedOutput).toContain("1000000");
+  // This fork lowered the authorize defaults from upstream's 1_000_000 / 1 GiB
+  // (19815c3, refs products-devnet-issues#6): an authorize_account request is
+  // charged against the AUTHORIZER's AllowedAuthorizers budget, and //Eve — the
+  // authorizer the deploy actions sign with — carries far less than 1,000,000 on
+  // the products devnet, so the old defaults were rejected on dispatch with
+  // TransactionStorage `InsufficientAuthorizerBudget`.
+  expect(result.combinedOutput).toContain("1000");
+  expect(result.combinedOutput).toContain("104857600");
 });
 
 test("bulletin history help shows options", async () => {

@@ -16,6 +16,23 @@ describe("normaliseLabel", () => {
     expect(normaliseLabel("alice")).toBe("alice");
     expect(normaliseLabel("sub.alice.dot")).toBe("sub.alice");
   });
+
+  test("strips the given TLD suffix rather than assuming .dot", () => {
+    expect(normaliseLabel("alice.paseo", "paseo")).toBe("alice");
+    expect(normaliseLabel("alice", "paseo")).toBe("alice");
+    // Under the paseo TLD a trailing .dot is not a TLD and must not be stripped.
+    expect(normaliseLabel("alice.dot", "paseo")).toBe("alice.dot");
+    // A subdomain keeps both segments when the trailing one is not the TLD.
+    expect(normaliseLabel("sub.alice", "paseo")).toBe("sub.alice");
+  });
+});
+
+describe("isSecondLevelDotName", () => {
+  test("distinguishes a second-level name from a subdomain under the given TLD", () => {
+    expect(isSecondLevelDotName("alice.paseo", "paseo")).toBe(true);
+    expect(isSecondLevelDotName("alice", "paseo")).toBe(true);
+    expect(isSecondLevelDotName("sub.alice", "paseo")).toBe(false);
+  });
 });
 
 describe("isCanonicalLabel", () => {
@@ -140,8 +157,10 @@ describe("validateGovernanceLabel stem-length rule", () => {
   });
 
   test("accepts PoP-tier stems (6-8 characters) — the registerReserved override", () => {
-    expect(() => validateGovernanceLabel("w3spay")).not.toThrow(); // 6
-    expect(() => validateGovernanceLabel("feedback")).not.toThrow(); // 8
+    // 6 characters
+    expect(() => validateGovernanceLabel("w3spay")).not.toThrow();
+    // 8 characters
+    expect(() => validateGovernanceLabel("feedback")).not.toThrow();
   });
 
   test("rejects stems longer than eight characters (open tier)", () => {
@@ -150,9 +169,83 @@ describe("validateGovernanceLabel stem-length rule", () => {
     );
   });
 
-  test("inherits the digit-suffix rule from validateDomainLabel", () => {
-    expect(() => validateGovernanceLabel("abcd1")).toThrow(
+  test("measures the stem with trailing digits stripped", () => {
+    // Upstream measures this against its 5-character cap. This fork caps
+    // governance labels at 8 (see the two tests above): registerReserved is the
+    // override for reserved stems (<=5) AND the PoP tier (6-8), so a 6-char stem
+    // is legitimate here. The boundary is therefore checked at 9.
+    // stem of 5
+    expect(() => validateGovernanceLabel("abcde1")).not.toThrow();
+    // stem of 6 — PoP tier, still a registerReserved override
+    expect(() => validateGovernanceLabel("abcdef1")).not.toThrow();
+    // stem of 8 — the upper bound this fork allows
+    expect(() => validateGovernanceLabel("abcdefgh1")).not.toThrow();
+    // stem of 9 — open tier, must go through the normal priced flow
+    expect(() => validateGovernanceLabel("abcdefghi1")).toThrow(
+      /base name must be 8 characters or fewer/,
+    );
+  });
+
+  test("does not apply the PopRules digit-suffix rule", () => {
+    expect(() => validateGovernanceLabel("abcd1")).not.toThrow();
+  });
+});
+
+// The digit-suffix rule ("zero or exactly two trailing digits") is a PopRules
+// rule. registerReserved never consults PopRules — its only on-chain label checks
+// are isSingleLabel() and length >= 3 — so applying that rule to this path would
+// reject labels the contract accepts. Governance labels only.
+//
+// The contrast with the normal path is asserted at the bottom of this block, so
+// the two rule sets can be read side by side rather than two files apart.
+describe("validateGovernanceLabel is independent of the PopRules digit-suffix rule", () => {
+  test("accepts ONE trailing digit, which PopRules rejects outright", () => {
+    // registered on-chain: dim2.dot, paseo-next-v2
+    expect(() => validateGovernanceLabel("dim2")).not.toThrow();
+  });
+
+  test("accepts THREE OR MORE trailing digits, which PopRules also rejects", () => {
+    expect(() => validateGovernanceLabel("dim123")).not.toThrow();
+    expect(() => validateGovernanceLabel("dim9999")).not.toThrow();
+  });
+
+  test("accepts zero trailing digits", () => {
+    expect(() => validateGovernanceLabel("game")).not.toThrow();
+  });
+
+  test("accepts exactly two trailing digits", () => {
+    expect(() => validateGovernanceLabel("dim22")).not.toThrow();
+  });
+
+  // Guards the scope of the relaxation: normal registration is untouched, so every
+  // non-governance name still obeys the 0-or-2 rule.
+  test("the NORMAL path still enforces 0-or-2 trailing digits", () => {
+    expect(() => validateDomainLabel("dim2")).toThrow(
       /must have either no trailing digits or exactly two/,
     );
+    expect(() => validateDomainLabel("dim123")).toThrow(
+      /must have either no trailing digits or exactly two/,
+    );
+    expect(() => validateDomainLabel("dimtwo")).not.toThrow();
+    expect(() => validateDomainLabel("dimtwo01")).not.toThrow();
+  });
+});
+
+describe("validateGovernanceLabel canonical-label rules", () => {
+  test("rejects uppercase characters", () => {
+    expect(() => validateGovernanceLabel("Dim2")).toThrow(/governance label/);
+  });
+
+  test("rejects labels containing a dot", () => {
+    expect(() => validateGovernanceLabel("dim.dot")).toThrow(/governance label/);
+  });
+
+  test("rejects leading or trailing hyphen", () => {
+    expect(() => validateGovernanceLabel("-dim")).toThrow(/governance label/);
+    expect(() => validateGovernanceLabel("dim-")).toThrow(/governance label/);
+  });
+
+  test("rejects labels shorter than three characters", () => {
+    expect(() => validateGovernanceLabel("ab")).toThrow(/minimum length of 3 characters/);
   });
 });

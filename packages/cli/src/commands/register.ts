@@ -3,7 +3,6 @@ import {
   checksumAddress,
   getAddress,
   isHex,
-  namehash,
   zeroAddress,
   type Address,
   type Hex,
@@ -38,8 +37,19 @@ import {
   COMMITMENT_POLL_TIMEOUT_MS,
   COMMITMENT_POLL_INTERVAL_MS,
 } from "../utils/constants";
-import { validateDomainLabel, normaliseLabel, stripTrailingDigits } from "../utils/validation";
-import { computeDomainTokenId } from "../utils/contractInteractions";
+import {
+  validateDomainLabel,
+  validateGovernanceLabel,
+  stripTrailingDigits,
+} from "../utils/validation";
+import { ContractRevertError } from "../utils/contractInteractions";
+import {
+  computeDomainTokenId,
+  domainNode,
+  formatDomainName,
+  normaliseName,
+  readCurrentPricingVersion,
+} from "../core/naming";
 import { convertWeiToNative } from "../utils/formatting";
 import { isSameEvmAddress } from "../utils/address";
 
@@ -104,7 +114,7 @@ export async function classifyDomainName(
   ctx: DotnsContext,
   name: string,
 ): Promise<NameClassification> {
-  const label = normaliseLabel(name);
+  const label = await normaliseName(ctx, name);
   const result = await read<NameClassificationLike>(
     ctx,
     ctx.contracts.DOTNS_RULES,
@@ -118,16 +128,70 @@ export async function classifyDomainName(
   };
 }
 
+/**
+ * {@link classifyDomainName}, but returns `null` when PopRules *refuses to
+ * classify* the label at all rather than throwing.
+ *
+ * `classifyName` is `pure`, yet it reverts with `PopError` for label shapes
+ * PopRules rejects outright (one, or three or more, trailing digits). For callers
+ * that treat the classification as advisory — notably the governance path, which
+ * submits through `registerReserved` and bypasses PopRules entirely — that revert
+ * is an answer, not a failure.
+ *
+ * Only a revert is converted to `null`. An unreachable chain, an unmapped origin
+ * or an ABI mismatch all propagate: reinterpreting those as "unclassifiable"
+ * would let a transient RPC failure silently unlock the governance path, which is
+ * precisely the wrong behaviour under uncertainty.
+ *
+ * The revert reason is handed to `onUnclassifiable` rather than printed, so the
+ * reason is never lost while this layer stays free of presentation concerns.
+ */
+export interface TryClassifyDomainNameOptions {
+  /** Receives the revert reason when the name cannot be classified. */
+  onUnclassifiable?: (reason: string) => void;
+}
+
+export async function tryClassifyDomainName(
+  ctx: DotnsContext,
+  name: string,
+  opts: TryClassifyDomainNameOptions = {},
+): Promise<NameClassification | null> {
+  try {
+    return await classifyDomainName(ctx, name);
+  } catch (error) {
+    if (!(error instanceof ContractRevertError)) throw error;
+    opts.onUnclassifiable?.(error.message);
+    return null;
+  }
+}
+
 export async function ensureDomainNotRegistered(ctx: DotnsContext, name: string): Promise<void> {
-  const label = normaliseLabel(name);
-  const owner = await readDomainOwner(ctx, label);
-  if (owner !== zeroAddress) throw new DomainUnavailableError(`${label}.dot`);
+  const label = await normaliseName(ctx, name);
+  // Ask the controller directly: `available(label)` is the exact predicate the
+  // on-chain `register()` enforces. Reading `ownerOf` instead would wrongly pass a
+  // name that is unavailable yet not currently minted (for example one in its
+  // post-expiry grace period), because `ownerOf` reverts and that revert is
+  // swallowed as "no owner", so the pre-check would disagree with the reveal.
+  const available = await read<boolean>(
+    ctx,
+    ctx.contracts.DOTNS_REGISTRAR_CONTROLLER,
+    DOTNS_REGISTRAR_CONTROLLER_ABI,
+    "available",
+    [label],
+  );
+  if (!available) throw new DomainUnavailableError(await formatDomainName(ctx, label));
 }
 
 export type GenerateCommitmentOptions = {
   owner?: Address;
   secret?: Hex;
   includeReverse?: boolean;
+  /**
+   * Set for commitments that will be revealed through registerReserved. That path
+   * bypasses PopRules, so the label is validated against the controller's own rules
+   * (validateGovernanceLabel) instead of the PopRules-derived validateDomainLabel.
+   */
+  governance?: boolean;
 };
 
 export type GeneratedCommitment = {
@@ -135,6 +199,45 @@ export type GeneratedCommitment = {
   registration: DomainRegistration;
   secret: Hex;
 };
+
+// Headroom added over the quoted price when sealing maxPrice into a commitment.
+// register() reverts once the charged amount exceeds maxPrice; the pricingVersion
+// stamp already pins the price deterministically, so this margin only absorbs a
+// rounding difference between the quote and the reveal charge. The margin has no
+// cost because the reveal refunds any excess msg.value on-chain.
+const MAX_PRICE_SLIPPAGE_PERCENT = 10n;
+
+function bufferedMaxPriceWei(priceWei: bigint): bigint {
+  return priceWei + (priceWei * MAX_PRICE_SLIPPAGE_PERCENT) / 100n;
+}
+
+// PopRules' price quote for a label and owner at the current cost-model version,
+// before any eligibility enforcement. The commit-time maxPrice seal and the
+// reveal-time eligibility check both start from this read, so the knowledge of
+// which PopRules call and field carry the price stays in one place.
+async function readNamePricing(
+  ctx: DotnsContext,
+  label: string,
+  owner: Address,
+): Promise<PricingAndEligibility> {
+  return read<PricingAndEligibility>(
+    ctx,
+    ctx.contracts.DOTNS_RULES,
+    POP_RULES_ABI,
+    "priceWithoutCheck",
+    [label, owner],
+  );
+}
+
+// The quoted price for maxPrice, read without enforcing eligibility. The reveal
+// (register) re-prices and enforces eligibility itself; sealing maxPrice must not
+// throw here for an ineligible owner, or a name that only the reveal can reject
+// would fail at commit time instead with a misleading error. register() compares
+// its charge against the name price alone, so this cap tracks the name price.
+async function quoteMaxPriceWei(ctx: DotnsContext, label: string, owner: Address): Promise<bigint> {
+  const priced = await readNamePricing(ctx, label, owner);
+  return bufferedMaxPriceWei(priced.price);
+}
 
 function resolveSecret(secret?: Hex): Hex {
   if (secret !== undefined) {
@@ -154,16 +257,31 @@ export async function generateCommitment(
   name: string,
   opts: GenerateCommitmentOptions = {},
 ): Promise<GeneratedCommitment> {
-  const label = normaliseLabel(name);
-  validateDomainLabel(label);
+  const label = await normaliseName(ctx, name);
+  if (opts.governance) {
+    validateGovernanceLabel(label);
+  } else {
+    validateDomainLabel(label);
+  }
 
   const owner = opts.owner ?? (await ownEvmAddress(ctx));
   const secret = resolveSecret(opts.secret);
+
+  // maxPrice and pricingVersion are part of the commitment preimage, so they must
+  // be sealed here and reused verbatim at reveal. pricingVersion binds the live
+  // cost-model version (commit() stamps it and register() rejects a mismatch). The
+  // governance path (registerReserved) charges nothing and never reads maxPrice, so
+  // a zero cap keeps the preimage stable without constraining it.
+  const pricingVersion = await readCurrentPricingVersion(ctx);
+  const maxPrice = opts.governance ? 0n : await quoteMaxPriceWei(ctx, label, owner);
+
   const registration: DomainRegistration = {
     label,
     owner,
     secret,
     reserved: opts.includeReverse ?? false,
+    maxPrice,
+    pricingVersion,
   };
 
   const commitment = await read<Hex>(
@@ -268,8 +386,8 @@ export async function waitForMinimumCommitmentAge(
 }
 
 export async function readDomainOwner(ctx: DotnsContext, name: string): Promise<Address> {
-  const label = normaliseLabel(name);
-  const tokenId = computeDomainTokenId(label);
+  const label = await normaliseName(ctx, name);
+  const tokenId = await computeDomainTokenId(ctx, label);
   try {
     return await read<Address>(ctx, ctx.contracts.DOTNS_REGISTRAR, DOTNS_REGISTRAR_ABI, "ownerOf", [
       tokenId,
@@ -335,7 +453,7 @@ export async function getPriceAndValidateEligibility(
   name: string,
   ownerAddress: Address,
 ): Promise<PricingAndEligibility> {
-  const label = normaliseLabel(name);
+  const label = await normaliseName(ctx, name);
   validateDomainLabel(label);
 
   const baseName = stripTrailingDigits(label);
@@ -351,13 +469,7 @@ export async function getPriceAndValidateEligibility(
     throw new Error("Base name reserved for original Lite registrant");
   }
 
-  const classificationResult = await read<PricingAndEligibility>(
-    ctx,
-    ctx.contracts.DOTNS_RULES,
-    POP_RULES_ABI,
-    "priceWithoutCheck",
-    [label, ownerAddress],
-  );
+  const classificationResult = await readNamePricing(ctx, label, ownerAddress);
   const requiredStatus = convertToProofOfPersonhoodStatus(classificationResult.status);
   const message = classificationResult.message;
 
@@ -382,7 +494,7 @@ export async function getPriceAndValidateEligibility(
   // so no caller-side check fires here. Reservation collisions and any other
   // protocol-side guards are enforced by PopRules at submission time.
 
-  const resolvedPriceWei = classificationResult.price ?? classificationResult.priceWei;
+  const resolvedPriceWei = classificationResult.price;
 
   return {
     priceWei: resolvedPriceWei,
@@ -403,7 +515,7 @@ export async function quoteCrossPayerFriction(
   callerEvmAddress: Address,
   ownerEvmAddress: Address,
 ): Promise<bigint> {
-  const label = normaliseLabel(name);
+  const label = await normaliseName(ctx, name);
   return read<bigint>(ctx, ctx.contracts.DOTNS_RULES, POP_RULES_ABI, "transferFloor", [
     label,
     callerEvmAddress,
@@ -442,7 +554,7 @@ export async function finalizeRegularRegistration(
   );
 
   return {
-    name: `${registration.label}.dot`,
+    name: await formatDomainName(ctx, registration.label),
     owner: registration.owner,
     priceWei,
     frictionWei,
@@ -465,7 +577,11 @@ export async function finalizeGovernanceRegistration(
     [registration],
     "Governance Registration",
   );
-  return { name: `${registration.label}.dot`, owner: registration.owner, txHash };
+  return {
+    name: await formatDomainName(ctx, registration.label),
+    owner: registration.owner,
+    txHash,
+  };
 }
 
 export type SubnameResult = {
@@ -480,10 +596,10 @@ export async function registerSubnode(
   parentLabel: string,
   ownerAddress: Address,
 ): Promise<SubnameResult> {
-  const subLabel = normaliseLabel(sublabel);
-  const parent = normaliseLabel(parentLabel);
+  const subLabel = await normaliseName(ctx, sublabel);
+  const parent = await normaliseName(ctx, parentLabel);
   const subnodeRecord: SubnodeRecord = {
-    parentNode: namehash(`${parent}.dot`),
+    parentNode: await domainNode(ctx, parent),
     subLabel,
     parentLabel: parent,
     owner: ownerAddress,
@@ -499,7 +615,11 @@ export async function registerSubnode(
     "Subname registration",
   );
 
-  return { name: `${subLabel}.${parent}.dot`, owner: ownerAddress, txHash };
+  return {
+    name: `${subLabel}.${await formatDomainName(ctx, parent)}`,
+    owner: ownerAddress,
+    txHash,
+  };
 }
 
 export async function verifyDomainOwnership(
@@ -507,8 +627,8 @@ export async function verifyDomainOwnership(
   name: string,
   expectedOwner: Address,
 ): Promise<Address> {
-  const label = normaliseLabel(name);
-  const tokenId = computeDomainTokenId(label);
+  const label = await normaliseName(ctx, name);
+  const tokenId = await computeDomainTokenId(ctx, label);
   const actualOwner = await read<Address>(
     ctx,
     ctx.contracts.DOTNS_REGISTRAR,
@@ -518,7 +638,7 @@ export async function verifyDomainOwnership(
   );
 
   if (checksumAddress(actualOwner) !== checksumAddress(expectedOwner)) {
-    throw new Error(`Owner mismatch for ${label}.dot`);
+    throw new Error(`Owner mismatch for ${await formatDomainName(ctx, label)}`);
   }
   return actualOwner;
 }
@@ -573,6 +693,8 @@ export type LabelStoreSyncResult = {
   labelStore: Address;
   pending: string[];
   synced: boolean;
+  /** The last claim failure when `synced` is false. */
+  error?: unknown;
 };
 
 // Reconciles on-chain state for the caller: a fresh registration parks the name
@@ -612,8 +734,7 @@ export async function ensureLabelStoreReady(
     }
   }
 
-  void lastError;
-  return { labelStore, pending: pendingLabels, synced: false };
+  return { labelStore, pending: pendingLabels, synced: false, error: lastError };
 }
 
 export type RegisterNameOptions = GenerateCommitmentOptions & {
@@ -629,7 +750,7 @@ export async function registerName(
   name: string,
   opts: RegisterNameOptions = {},
 ): Promise<RegistrationResult> {
-  const label = normaliseLabel(name);
+  const label = await normaliseName(ctx, name);
   await ensureDomainNotRegistered(ctx, label);
 
   const { commitment, registration } = await generateCommitment(ctx, label, opts);

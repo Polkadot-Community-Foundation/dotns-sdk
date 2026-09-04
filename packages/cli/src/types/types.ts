@@ -12,7 +12,7 @@ export enum ProofOfPersonhoodStatus {
 }
 
 export type DomainRegistration = {
-  /** Domain label without the .dot suffix (e.g., "example" for "example.dot") */
+  /** Bare domain label without the TLD suffix (for example "example" for "example.paseo"). */
   label: string;
   /** Ethereum address (H160) that will own the domain */
   owner: Address;
@@ -20,6 +20,19 @@ export type DomainRegistration = {
   secret: Hex;
   /** Whether this registration includes reverse record setup */
   reserved: boolean;
+  /**
+   * Slippage ceiling in wei: register() reverts with PriceExceedsMax when the
+   * charged amount exceeds this. Bound into the commitment hash, so it must be
+   * identical at commit and reveal.
+   */
+  maxPrice: bigint;
+  /**
+   * Cost-model version the registration is priced against. commit() stamps the
+   * live version; register() rejects a reveal whose pricingVersion differs from
+   * that stamp. Bound into the commitment hash, so it must be identical at commit
+   * and reveal.
+   */
+  pricingVersion: bigint;
 };
 
 export type TransactionStatus = "signing" | "broadcasting" | "included" | "finalized" | "failed";
@@ -58,9 +71,9 @@ export type ReviveCallResult = {
 };
 
 export type RegistrationCommandOptions = {
-  /** Domain label to register (without .dot) */
+  /** Domain label to register (bare, without the TLD suffix). */
   name?: string;
-  /** Parent domain label for subname registration (without .dot) */
+  /** Parent domain label for subname registration (bare, without the TLD suffix). */
   parent?: string;
   /** Proof of Personhood status requirement */
   status: "none" | "lite" | "full";
@@ -85,10 +98,10 @@ export type RegistrationCommandOptions = {
 };
 
 export type DomainOwnership = {
-  /** The label without the .dot */
+  /** The bare label, without the TLD suffix. */
   label?: string;
 
-  /** The label with the .dot */
+  /** The fully-qualified name, including the TLD suffix. */
   domain?: string;
 
   /** Whether the domain is currently registered */
@@ -680,7 +693,7 @@ export type BaseNameReservation = {
 };
 
 export type DomainLookupResult = {
-  /** Fully qualified domain name including the .dot suffix. */
+  /** Fully-qualified domain name including the TLD suffix. */
   domain: string;
   /** EIP-137 namehash of the fully qualified domain name. */
   node: string;
