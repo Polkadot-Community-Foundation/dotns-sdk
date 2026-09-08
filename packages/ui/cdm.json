@@ -842,7 +842,7 @@
             "inputs": []
           }
         ],
-        "metadataCid": "bafk2bzacea4gu6rfyjfsytqkugyopzxzl32toa2ejxzp2yfifqvi3qkb5sqre"
+        "metadataCid": "bafk2bzaceaangaerusxky5iyvylqy2e7urvs6g5jwpiaccp5g527khuk3x4m2"
       },
       "@dotns/registrar": {
         "version": 1,
@@ -1836,7 +1836,7 @@
             "inputs": []
           }
         ],
-        "metadataCid": "bafk2bzacebnvq3qfgxxd7ws6bx27hyo55jhlkktyshc522xmbvvevwf4tykom"
+        "metadataCid": "bafk2bzaceatcoscbirgo6x57baug5rapdaipydxebhrgw55ymsvjz7s2znzce"
       },
       "@dotns/registry": {
         "version": 1,
@@ -2381,7 +2381,7 @@
             ]
           }
         ],
-        "metadataCid": "bafk2bzacedu4lrolyb5n52cq6lfroyykvt6scyyl5dkudslbcopkukiyiqzgw"
+        "metadataCid": "bafk2bzaceazs27wj2xcs6shrmkq6kyrxlvztmnb4vvnsbk6jnc76n3vhs34ky"
       },
       "@dotns/pop-rules": {
         "version": 1,
@@ -3292,7 +3292,7 @@
             ]
           }
         ],
-        "metadataCid": "bafk2bzacedgxu4qyukdcfttf3cz3g4j54cgnl456v6ddm5devfephfchbzhjy"
+        "metadataCid": "bafk2bzacedd7kxpjodqed7fwjnck35ai3sz5uv6c7rty6i4uo7qdt3oeqyphe"
       },
       "@dotns/resolver": {
         "version": 1,
@@ -3636,7 +3636,7 @@
             ]
           }
         ],
-        "metadataCid": "bafk2bzaceclphizbbli7526lmydhootqe4dsedg3hiwco2e5qmcq2z32mencs"
+        "metadataCid": "bafk2bzacecelxy7klp2elrpslxqwtl4fqsyg5ev7mkebudxpw5sjz4stdr2ki"
       },
       "@dotns/reverse-resolver": {
         "version": 1,
@@ -4004,7 +4004,7 @@
             ]
           }
         ],
-        "metadataCid": "bafk2bzacebznsaf6kt4rohce34csrknyagd5w4vof4zjhigmvbtjd57a7ly6s"
+        "metadataCid": "bafk2bzaceaw76qleakn5rosowt4barlftgxkmaumdidfz6qmarqiieoxe6hgc"
       },
       "@dotns/content-resolver": {
         "version": 1,
@@ -4487,7 +4487,7 @@
             ]
           }
         ],
-        "metadataCid": "bafk2bzaced5sdkh7teew2f6jh4jqglft4hmqlopnoa6o5ny7wuxh6a22cjqtu"
+        "metadataCid": "bafk2bzaced4ffeu6g76y37wnmz273dvp74leqisaqhbvoxrbkaftxrhd6akww"
       },
       "@dotns/store-factory": {
         "version": 1,
@@ -4935,7 +4935,7 @@
             ]
           }
         ],
-        "metadataCid": "bafk2bzaced476ygv5wlar7siokrcyjvprpxzvkdofebjktwa43zruqyegutv4"
+        "metadataCid": "bafk2bzacebcrlp2jhpchsbujoewqyil7vqcxkqwzajlgsotkracn5ntbeypmw"
       },
       "@dotns/multicall3": {
         "version": 1,
@@ -5380,7 +5380,7 @@
             "stateMutability": "payable"
           }
         ],
-        "metadataCid": "bafk2bzaced3eyl3z6g7cflpo6nnhl7rxooy2lx3n4uyatqoypbjibjxd4zgpk"
+        "metadataCid": "bafk2bzacedzz47wy4xhjk3wksgqe75rtrnwedarmr7kaggy7hgxy3eq6xvfyy"
       }
     }
   }
