@@ -19,12 +19,14 @@ import DotnsNameWhitelist from "../../abis/DotnsNameWhitelist.json" with { type:
 // `dotliGateways`, e.g. dev-dot.li on devnet, paseo.li on paseo-v2), so moving the
 // gateway is a config change, not a code change.
 
-/** dot.li-style viewing URLs for a name on the ACTIVE environment's gateway(s),
- *  e.g. ["https://alice.dev-dot.li"] on devnet. Empty when the environment has
- *  no dot.li-style gateway (e.g. previewnet). */
-export function dotliViewUrls(name: string): string[] {
-  const stem = normaliseLabel(name);
-  return getActiveDotnsEnvironment().dotliGateways.map((gateway) => `https://${stem}.${gateway}`);
+// `label` is the bare second-level label, without any TLD. The dot.li gateways
+// already carry their own domain (for example `dev-dot.li`), so the view URL is
+// `${label}.${gateway}`. Callers must pass the resolved label, not a
+// fully-qualified name, otherwise the TLD would be duplicated. Empty when the
+// environment has no dot.li-style gateway (e.g. previewnet).
+export function dotliViewUrls(label: string): string[] {
+  const gateways = getActiveDotnsEnvironment().dotliGateways ?? [];
+  return gateways.map((gateway) => `https://${label}.${gateway}`);
 }
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
