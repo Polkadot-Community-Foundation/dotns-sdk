@@ -1,3 +1,4 @@
+import chalk from "chalk";
 import { Keyring } from "@polkadot/keyring";
 import type { KeyringPair } from "@polkadot/keyring/types";
 import { cryptoWaitReady } from "@polkadot/util-crypto";
@@ -152,11 +153,13 @@ export async function resolveAuthSourceReadOnly(): Promise<ResolvedAuthSource> {
 }
 
 function warnArgvSecret(flag: string): void {
-  console.warn(
-    `Warning: ${flag} puts a secret on the command line, where it is visible in ` +
-      `process listings and shell history. Prefer DOTNS_MNEMONIC / DOTNS_KEY_URI or an ` +
-      `encrypted keystore (dotns auth set).`,
+  const heading = chalk.yellow.bold(`⚠  SECURITY WARNING: ${flag} exposes a secret`);
+  const detail = chalk.yellow(
+    `${flag} puts a secret on the command line, where it is visible in process listings ` +
+      `and shell history. Prefer DOTNS_MNEMONIC / DOTNS_KEY_URI or an encrypted keystore ` +
+      `(dotns auth set).`,
   );
+  console.warn(`\n${heading}\n${detail}\n`);
 }
 
 export async function resolveAuthSource(opts: AuthSource): Promise<ResolvedAuthSource> {
@@ -199,5 +202,8 @@ export async function resolveAuthSource(opts: AuthSource): Promise<ResolvedAuthS
     isKeyUri: false,
     resolvedFrom: "default",
     account: accountName,
+    // The shared dev phrase is public, so it can key the registration retry
+    // cache like every other branch's credential does.
+    credential: DEFAULT_MNEMONIC,
   };
 }

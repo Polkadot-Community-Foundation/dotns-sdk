@@ -1,7 +1,10 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { concatHex, keccak256, stringToBytes, type Hex } from "viem";
+import * as realContext from "../../../src/core/context";
+import { deriveDomainTokenId } from "../../../src/utils/contractInteractions";
 import {
   saveCommitmentRecord,
   loadCommitmentRecords,
@@ -20,6 +23,10 @@ const OWNER = "0x2222222222222222222222222222222222222222" as const;
 const SECRET = ("0x" + "ab".repeat(32)) as `0x${string}`;
 const HASH = ("0x" + "cd".repeat(32)) as `0x${string}`;
 const PASSWORD = "correct horse battery staple";
+const MAX_PRICE = 11_000_000_000_000_000_000n;
+// A full-width uint256 version, past Number.MAX_SAFE_INTEGER, to prove lossless storage.
+const PRICING_VERSION =
+  26713409351715620920611153708050090579513471009420165942748436106067806057195n;
 
 let tempDir: string;
 
@@ -31,6 +38,8 @@ function save(label: string, committedAtIso: string, overrides: Record<string, u
     owner: OWNER,
     reserved: false,
     governance: false,
+    maxPrice: MAX_PRICE,
+    pricingVersion: PRICING_VERSION,
     secret: SECRET,
     commitmentHash: HASH,
     committedAtIso,
@@ -61,6 +70,17 @@ describe("registration manifest persistence", () => {
     expect(record?.label).toBe("coolname");
     expect(record?.owner).toBe(OWNER);
     expect(record?.commitmentHash).toBe(HASH);
+  });
+
+  test("stores the sealed pricing fields losslessly as decimal strings", () => {
+    save("coolname", "2026-06-02T12:00:00.000Z");
+    const record = findCommitmentRecord(ENV, CALLER, "coolname")!;
+    expect(record.maxPrice).toBe(MAX_PRICE.toString());
+    expect(record.pricingVersion).toBe(PRICING_VERSION.toString());
+    // The reveal reconstructs the commitment preimage from these, so BigInt() must
+    // round-trip the full uint256 without precision loss.
+    expect(BigInt(record.maxPrice!)).toBe(MAX_PRICE);
+    expect(BigInt(record.pricingVersion!)).toBe(PRICING_VERSION);
   });
 
   test("encrypts the secret at rest (never stored in plaintext)", () => {
@@ -100,6 +120,8 @@ describe("registration manifest persistence", () => {
       owner: OWNER,
       reserved: false,
       governance: false,
+      maxPrice: MAX_PRICE,
+      pricingVersion: PRICING_VERSION,
       secret: SECRET,
       commitmentHash: HASH,
       committedAtIso: "2026-06-02T12:00:00.000Z",
@@ -184,5 +206,109 @@ describe("resolveManifestCredential", () => {
       if (savedKeyUri === undefined) delete process.env[CLI_ENV.KEY_URI];
       else process.env[CLI_ENV.KEY_URI] = savedKeyUri;
     }
+  });
+});
+
+const PASEO_NODE = keccak256(
+  concatHex([("0x" + "00".repeat(32)) as Hex, keccak256(stringToBytes("paseo"))]),
+);
+
+let availableResult = true;
+let transientFailures = 0;
+const reads: string[] = [];
+
+function fakeRead(_ctx: unknown, _address: string, _abi: unknown, functionName: string): unknown {
+  if (transientFailures > 0) {
+    transientFailures -= 1;
+    throw new Error("transient RPC failure");
+  }
+  reads.push(functionName);
+  if (functionName === "available") return availableResult;
+  if (functionName === "protocolRegistry") return "0x00000000000000000000000000000000000000ff";
+  if (functionName === "tldNode") return PASEO_NODE;
+  // The registry returns the suffix with its leading dot; resolveTldInfo strips it.
+  if (functionName === "tld") return ".paseo";
+  throw new Error(`unexpected read: ${functionName}`);
+}
+
+mock.module("../../../src/core/context", () => ({ ...realContext, read: fakeRead }));
+
+const { computeDomainTokenId, resolveTldInfo, formatDomainName, clearTldInfoCache } =
+  await import("../../../src/core/naming");
+const { ensureDomainNotRegistered } = await import("../../../src/commands/register");
+
+const namingCtx = {
+  // Any object works as the WeakMap cache key that scopes the TLD to this client.
+  clientWrapper: {},
+  contracts: {
+    DOTNS_REGISTRAR_CONTROLLER: "0x00000000000000000000000000000000000000aa",
+    DOTNS_REGISTRAR: "0x00000000000000000000000000000000000000bb",
+  },
+} as unknown as realContext.DotnsContext;
+
+describe("TLD ingested from chain", () => {
+  beforeEach(() => {
+    reads.length = 0;
+    transientFailures = 0;
+    clearTldInfoCache();
+  });
+  afterEach(() => clearTldInfoCache());
+
+  test("resolveTldInfo reads the deployment TLD rather than assuming .dot", async () => {
+    expect(await resolveTldInfo(namingCtx)).toEqual({ tldNode: PASEO_NODE, tld: "paseo" });
+    expect(reads).toEqual(["protocolRegistry", "tldNode", "tld"]);
+  });
+
+  test("retries a transient read failure before resolving", async () => {
+    transientFailures = 1;
+    expect(await resolveTldInfo(namingCtx)).toEqual({ tldNode: PASEO_NODE, tld: "paseo" });
+  });
+
+  test("the immutable TLD is cached across calls", async () => {
+    await resolveTldInfo(namingCtx);
+    await resolveTldInfo(namingCtx);
+    expect(reads.filter((functionName) => functionName === "tldNode")).toHaveLength(1);
+  });
+
+  test("does not share the cache between clients that share a controller address", async () => {
+    // paseo-v2 and previewnet share a controller address but are distinct chains,
+    // so a second client with the same controller must resolve its own TLD.
+    const otherClientCtx = {
+      clientWrapper: {},
+      contracts: namingCtx.contracts,
+    } as unknown as realContext.DotnsContext;
+    await resolveTldInfo(namingCtx);
+    await resolveTldInfo(otherClientCtx);
+    expect(reads.filter((functionName) => functionName === "tldNode")).toHaveLength(2);
+  });
+
+  test("computeDomainTokenId derives the id under the chain TLD", async () => {
+    expect(await computeDomainTokenId(namingCtx, "getsome")).toBe(
+      deriveDomainTokenId(PASEO_NODE, "getsome"),
+    );
+  });
+
+  test("formatDomainName uses the deployment TLD suffix", async () => {
+    expect(await formatDomainName(namingCtx, "alice")).toBe("alice.paseo");
+  });
+});
+
+describe("ensureDomainNotRegistered enforces the controller predicate", () => {
+  beforeEach(() => {
+    reads.length = 0;
+    clearTldInfoCache();
+  });
+  afterEach(() => clearTldInfoCache());
+
+  test("passes when available(label) is true, checking available not ownerOf", async () => {
+    availableResult = true;
+    await expect(ensureDomainNotRegistered(namingCtx, "alice")).resolves.toBeUndefined();
+    expect(reads).toContain("available");
+    expect(reads).not.toContain("ownerOf");
+  });
+
+  test("throws with the real TLD suffix when available(label) is false", async () => {
+    availableResult = false;
+    await expect(ensureDomainNotRegistered(namingCtx, "alice")).rejects.toThrow("alice.paseo");
   });
 });

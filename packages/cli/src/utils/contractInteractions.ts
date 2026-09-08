@@ -12,21 +12,43 @@ import {
 import type { PolkadotSigner } from "polkadot-api";
 import type { ReviveClientWrapper } from "../client/polkadotClient";
 import type { TransactionStatus } from "../types/types";
-import { DOT_NODE } from "./constants";
 import { withTimeout } from "./formatting";
 
-export const UNMAPPED_ORIGIN_REVERT_HINT =
-  "Contract reverted with empty data. The origin SS58 is likely not mapped on " +
-  "Asset Hub Revive. Run `dotns account map` (or any signed transaction from " +
-  "this account), then retry.";
+// An empty-data revert has two common, unrelated causes, so the hint names both
+// rather than asserting the origin is unmapped: a genuinely unmapped origin makes
+// pallet-revive reject reads with empty data, but so does calling a selector the
+// deployed contract does not expose, which is exactly what a stale ABI produces.
+export const EMPTY_DATA_REVERT_HINT =
+  "An empty-data revert usually means one of two things: the origin SS58 is not " +
+  "mapped on Asset Hub Revive (run `dotns account map`, or send any signed " +
+  "transaction from this account, then retry), or the deployed contract exposes no " +
+  "function for this call's selector (the synced ABI may be out of date for this " +
+  "deployment).";
 
 export function isRevertFlag(flags: bigint): boolean {
   return (flags & 1n) === 1n;
 }
 
+/**
+ * A revert carrying revert data: the contract ran and rejected the call, so the
+ * failure is an answer rather than a failure to reach the chain.
+ *
+ * Deliberately not raised for the empty-data revert, whose causes are an unmapped
+ * origin or a stale-ABI selector mismatch ({@link EMPTY_DATA_REVERT_HINT}) — setup
+ * problems with their own remedies — nor for RPC failures, ABI mismatches or decode
+ * errors. Callers that treat a revert as information must not treat those the same
+ * way.
+ */
+export class ContractRevertError extends Error {
+  constructor(revertReason: string) {
+    super(`Contract reverted: ${revertReason}`);
+    this.name = "ContractRevertError";
+  }
+}
+
 export function buildRevertError(data: Hex, abi: Abi): Error {
   if (data === "0x") {
-    return new Error(UNMAPPED_ORIGIN_REVERT_HINT);
+    return new Error(`Contract reverted with empty data. ${EMPTY_DATA_REVERT_HINT}`);
   }
 
   let revertReason: string = data;
@@ -38,12 +60,12 @@ export function buildRevertError(data: Hex, abi: Abi): Error {
   } catch {
     // Unknown error selector — fall back to raw hex
   }
-  return new Error(`Contract reverted: ${revertReason}`);
+  return new ContractRevertError(revertReason);
 }
 
 export function decodeContractRevertError(data: Hex, abi: Abi, context: string): Error {
   if (data === "0x") {
-    return new Error(`${context} reverted with empty data. ${UNMAPPED_ORIGIN_REVERT_HINT}`);
+    return new Error(`${context} reverted with empty data. ${EMPTY_DATA_REVERT_HINT}`);
   }
 
   return buildRevertError(data, abi);
@@ -158,8 +180,17 @@ export async function submitContractTransaction(
   }
 }
 
-export function computeDomainTokenId(label: string): bigint {
+// Pure namehash of `label` rooted at `tldNode`, mirroring the on-chain
+// `LabelUtils.namehashUnder(tldNode, labelhash)`. The TLD node is a runtime value
+// (`DotnsProtocolRegistry.tldNode()`), not a constant: distinct deployments use
+// distinct TLDs (for example `dot` on mainnet, `paseo` on the Paseo testnet), so
+// the caller must supply the node read from chain rather than assuming `.dot`.
+export function deriveDomainNode(tldNode: Hex, label: string): Hex {
   const labelhash = keccak256(toBytes(label));
-  const node = keccak256(concatHex([DOT_NODE, labelhash]));
-  return BigInt(node);
+  return keccak256(concatHex([tldNode, labelhash]));
+}
+
+// The minted ERC721 tokenId is `uint256(node)` (see DotnsRegistrarController).
+export function deriveDomainTokenId(tldNode: Hex, label: string): bigint {
+  return BigInt(deriveDomainNode(tldNode, label));
 }

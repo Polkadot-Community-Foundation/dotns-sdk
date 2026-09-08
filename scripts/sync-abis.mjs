@@ -1,11 +1,16 @@
 #!/usr/bin/env node
-// Syncs Dotns contract ABIs from the latest Polkadot-Community-Foundation/dotns GitHub release.
+// Syncs Dotns contract ABIs from the newest Polkadot-Community-Foundation/dotns GitHub release,
+// including prereleases, because the testnets the SDK targets deploy release
+// candidates ahead of any stable tag.
 //
 // - Downloads only the ABIs the SDK consumes (see ABI_NAMES below).
 // - Writes to packages/cli/abis/ (the UI consumes ABIs via cdm.json + the SDK).
 // - Skips Multicall3 and Store: not published in releases, kept as local files.
 // - Idempotent: caches the synced tag in .abis-version and skips if unchanged.
-// - Network/auth failures warn and exit 0 so `bun install` keeps working.
+// - Network and auth failures warn and exit 0 so `bun install` works offline.
+// - A release that cannot supply a complete ABI set fails the install instead,
+//   because building against whatever is committed is how stale interfaces
+//   reach consumers unnoticed. DOTNS_ABIS_SKIP is the escape hatch.
 //
 // Auth: dotns is private, so a token is required. Provide via GITHUB_TOKEN
 // or GH_TOKEN. Locally: `GITHUB_TOKEN=$(gh auth token) bun install`.
@@ -23,6 +28,8 @@ const REPO = "Polkadot-Community-Foundation/dotns";
 const ABI_NAMES = [
 	"DotnsContentResolver",
 	"DotnsNameEscrow",
+	"DotnsNameWhitelist",
+	"DotnsPopController",
 	"DotnsRegistrar",
 	"DotnsRegistrarController",
 	"DotnsRegistry",
@@ -47,11 +54,7 @@ function authHeaders() {
 	return headers;
 }
 
-async function fetchRelease() {
-	const tag = process.env.DOTNS_ABIS_TAG;
-	const url = tag
-		? `https://api.github.com/repos/${REPO}/releases/tags/${tag}`
-		: `https://api.github.com/repos/${REPO}/releases/latest`;
+async function fetchGitHubJson(url) {
 	const res = await fetch(url, { headers: authHeaders() });
 	if (res.status === 404 || res.status === 401) {
 		throw new Error(
@@ -59,9 +62,27 @@ async function fetchRelease() {
 		);
 	}
 	if (!res.ok) throw new Error(`GitHub API ${res.status}: ${await res.text()}`);
-	const body = await res.json();
-	if (!body.tag_name) throw new Error("release missing tag_name");
-	return body;
+	return res.json();
+}
+
+// The testnets the SDK targets run release-candidate contract deployments, so the
+// ABIs the SDK must match are published as prereleases. The default therefore
+// follows the newest release on any channel rather than the newest stable one:
+// /releases/latest omits prereleases, whereas the list endpoint returns every
+// release newest-first. DOTNS_ABIS_TAG still pins an exact tag when a caller needs
+// a specific set.
+async function fetchRelease() {
+	const tag = process.env.DOTNS_ABIS_TAG;
+	if (tag) {
+		const pinned = await fetchGitHubJson(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`);
+		if (!pinned.tag_name) throw new Error(`release ${tag} missing tag_name`);
+		return pinned;
+	}
+	const releases = await fetchGitHubJson(`https://api.github.com/repos/${REPO}/releases?per_page=30`);
+	if (!Array.isArray(releases)) throw new Error("releases endpoint did not return a list");
+	const newest = releases.find((release) => !release.draft && release.tag_name);
+	if (!newest) throw new Error("no published (non-draft) release found");
+	return newest;
 }
 
 async function readCachedTag() {
@@ -139,23 +160,35 @@ async function main() {
 	}
 
 	info(`syncing ABIs from ${REPO} ${tag}`);
+
+	const assetByName = new Map(release.assets.map((a) => [a.name, a]));
+	const missing = ABI_NAMES.filter((n) => !assetByName.has(`${n}.json`));
+	if (missing.length > 0) {
+		throw new Error(`release ${tag} is missing assets: ${missing.join(", ")}`);
+	}
+
+	let bodies;
 	try {
-		const assetByName = new Map(release.assets.map((a) => [a.name, a]));
-		const missing = ABI_NAMES.filter((n) => !assetByName.has(`${n}.json`));
-		if (missing.length > 0) {
-			throw new Error(`release ${tag} missing assets: ${missing.join(", ")}`);
-		}
-		const bodies = await Promise.all(
+		bodies = await Promise.all(
 			ABI_NAMES.map(async (name) => [name, await downloadAsset(assetByName.get(`${name}.json`))]),
 		);
-		await Promise.all(bodies.map(([name, body]) => writeAbi(name, body)));
-		await writeFile(VERSION_FILE, `${tag}\n`);
-		info(`synced ${ABI_NAMES.length} ABIs to ${TARGETS.length} packages`);
 	} catch (err) {
+		// Nothing has been written yet, so the ABIs on disk are still a coherent set
+		// from the previously synced tag. Safe to carry on with them.
 		warn(`download failed (${err.message}); existing ABIs left unchanged`);
+		return;
 	}
+
+	// From here a failure can leave a partial set on disk, so it must not be swallowed.
+	await Promise.all(bodies.map(([name, body]) => writeAbi(name, body)));
+	await writeFile(VERSION_FILE, `${tag}\n`);
+	info(`synced ${ABI_NAMES.length} ABIs to ${TARGETS.length} packages`);
 }
 
 main().catch((err) => {
-	warn(`unexpected error: ${err?.stack ?? err}`);
+	console.error(`[sync-abis] ${err?.message ?? err}`);
+	console.error(
+		"[sync-abis] set DOTNS_ABIS_SKIP=1 to bypass, or DOTNS_ABIS_TAG to pin a release with a complete ABI set",
+	);
+	process.exit(1);
 });

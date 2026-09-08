@@ -4,6 +4,7 @@ import { checksumAddress, isAddress, type Address, type Hex } from "viem";
 import { formatErrorMessage, formatWeiAsEther } from "../../utils/formatting";
 import {
   classifyDomainName,
+  tryClassifyDomainName,
   ensureDomainNotRegistered,
   generateCommitment,
   submitCommitment,
@@ -19,6 +20,7 @@ import {
   readDomainOwner,
   type RegistrationResult,
 } from "../../commands/register";
+import { isNameGrantedTo } from "../../commands/accountChecks";
 import {
   saveCommitmentRecord,
   loadCommitmentRecords,
@@ -33,6 +35,7 @@ import {
 import {
   isValidSubstrateAddress,
   validateCanonicalLabel,
+  isLitePersonLabel,
   validateDomainLabel,
   validateGovernanceLabel,
 } from "../../utils/validation";
@@ -41,13 +44,25 @@ import {
   type RegistrationCommandOptions,
   ProofOfPersonhoodStatus,
 } from "../../types/types";
-import { step, printCommandHeader } from "../ui";
+import { step, stepStart, stepOk, printCommandHeader } from "../ui";
 import { buildDotnsContext, prepareAssetHubContext } from "../context";
+import { formatDomainName, normaliseName, readCurrentPricingVersion } from "../../core/naming";
 import { makeOnStatus } from "../txStatus";
 import type { DotnsContext } from "../../core/context";
 import { prepareReadOnlyContext } from "./lookup";
 import { generateRandomLabel } from "../labels";
 import { resolveTransferRecipient, transferName } from "../transfer";
+
+// A cached commitment that can no longer be revealed: its preimage predates the
+// pricing fields, or the cost-model version has rotated since it was committed.
+// Distinct from an unexpected failure (RPC, decrypt), so a batch resume can skip
+// exactly this case and surface everything else.
+export class UnrevealableCommitmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnrevealableCommitmentError";
+  }
+}
 
 type PersistContext = {
   env: string;
@@ -136,6 +151,10 @@ export function classifyTransferDestination(destination: string): TransferDestin
 export function isValidTransferDestination(destination: string): boolean {
   const kind = classifyTransferDestination(destination);
   if (kind === "evm" || kind === "substrate") return true;
+
+  // A lite name carries a separator and still names one owner, so it resolves the
+  // same way an ordinary label does.
+  if (isLitePersonLabel(destination)) return true;
 
   const domainLabelPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
   return (
@@ -243,7 +262,10 @@ export async function executeRegistration(
   const { evmAddress } = context;
   const session = buildSession(context, "Register");
 
-  const label = options.name ?? generateRandomLabel(ProofOfPersonhoodStatus.NoStatus);
+  const label = options.name
+    ? await normaliseName(session.ctx, options.name)
+    : generateRandomLabel(ProofOfPersonhoodStatus.NoStatus);
+  const domain = await formatDomainName(session.ctx, label);
 
   let ownerEvmAddress: Address = evmAddress;
   if (options.owner != null) {
@@ -259,7 +281,7 @@ export async function executeRegistration(
       chalk.yellow(options.governance ? "Governance registration" : "Regular registration"),
   );
   console.log(chalk.gray("  Label:     ") + chalk.cyan(label));
-  console.log(chalk.gray("  Domain:    ") + chalk.cyan(label + ".dot"));
+  console.log(chalk.gray("  Domain:    ") + chalk.cyan(domain));
   console.log(chalk.gray("  Caller:    ") + chalk.white(evmAddress));
   console.log(chalk.gray("  Owner:     ") + chalk.white(ownerEvmAddress));
   if (crossPayer) {
@@ -311,12 +333,12 @@ export async function executeRegistration(
     commitmentBuffer: options.commitmentBuffer,
   });
 
-  console.log(chalk.bold.green("✓ Operation Complete") + chalk.gray(` ${label}.dot`));
+  console.log(chalk.bold.green("✓ Operation Complete") + chalk.gray(` ${domain}`));
 
   return {
     ok: true as const,
     label,
-    domain: `${label}.dot`,
+    domain,
     caller: evmAddress,
     owner: ownerEvmAddress,
   };
@@ -338,16 +360,23 @@ export async function executeSubnameRegistration(
   const session = buildSession(context, "Subname");
 
   const sublabel = options.name;
-  const parentLabel = options.parent;
+  // Strip the TLD before classifying: `--parent joseph.42.dot` and `--parent joseph.42`
+  // name the same parent, and `formatDomainName` below appends the TLD itself.
+  const parentLabel = await normaliseName(session.ctx, options.parent);
+  // The new label must never carry a separator: that is what keeps the dotted space
+  // exclusive to the gateway. The parent may be a lite name, which legitimately has one.
   validateCanonicalLabel(sublabel, "subname");
-  validateCanonicalLabel(parentLabel, "parent label");
+  if (!isLitePersonLabel(parentLabel)) {
+    validateCanonicalLabel(parentLabel, "parent label");
+  }
   const ownerAddress = (options.owner as Address) ?? evmAddress;
 
-  const fullName = `${sublabel}.${parentLabel}.dot`;
+  const parentDomain = await formatDomainName(session.ctx, parentLabel);
+  const fullName = `${sublabel}.${parentDomain}`;
 
   printCommandHeader("Subname Registration");
   console.log(chalk.gray("  Subname:   ") + chalk.cyan(fullName));
-  console.log(chalk.gray("  Parent:    ") + chalk.white(`${parentLabel}.dot`));
+  console.log(chalk.gray("  Parent:    ") + chalk.white(parentDomain));
   console.log(chalk.gray("  Owner:     ") + chalk.white(ownerAddress));
 
   const result = await step("Registering subname", async () =>
@@ -373,6 +402,8 @@ function persistCommitment(
     owner: Address;
     reserved: boolean;
     governance: boolean;
+    maxPrice: bigint;
+    pricingVersion: bigint;
     secret: Hex;
     commitmentHash: Hex;
     transferDestination?: string;
@@ -386,6 +417,8 @@ function persistCommitment(
       owner: params.owner,
       reserved: params.reserved,
       governance: params.governance,
+      maxPrice: params.maxPrice,
+      pricingVersion: params.pricingVersion,
       secret: params.secret,
       commitmentHash: params.commitmentHash,
       committedAtIso: new Date().toISOString(),
@@ -499,13 +532,56 @@ async function executeGovernanceRegistration(
 ): Promise<void> {
   console.log(chalk.bold("\n🏛 Governance registration (commit-reveal)\n"));
 
+  // This path submits through DotnsRegistrarController.registerReserved, which
+  // never consults PopRules: its only on-chain label checks are isSingleLabel()
+  // (InvalidLabel) and length >= 3 (LabelTooShort). Hence validateGovernanceLabel
+  // rather than validateDomainLabel, which refuses a lite name outright because
+  // only the gateway issues one.
+  //
+  // The base <= 5 bound it does apply is not a registerReserved requirement; it
+  // mirrors PopRules' `baseLength <= 5 -> Reserved` classification. Kept
+  // deliberately: it holds this command to the reserved class it is for, rather
+  // than silently widening what a grant holder can mint here.
   validateGovernanceLabel(label);
 
+  // registerReserved is gated on the name whitelist (or Root), not on the
+  // caller's PoP tier. Surfaced as information only: a Root-origin mint skips
+  // the grant check, so a `false` here is a warning rather than a hard stop.
+  const granted = await step("Checking name grant", async () =>
+    isNameGrantedTo(session.ctx, label, session.caller).catch(() => null),
+  );
+  if (granted === false) {
+    console.log(
+      chalk.yellow("  ⚠ name is not granted to the caller; ") +
+        chalk.gray("registerReserved reverts with NameNotGranted unless the origin is Root"),
+    );
+  } else if (granted === true) {
+    console.log(chalk.gray("  granted:   ") + chalk.green("yes"));
+  }
+
+  // A null classification means PopRules refuses to classify the label's *shape*
+  // (classifyName reverts). registerReserved does not consult PopRules, so that is
+  // not a blocker here — only a definite non-Reserved classification is. Anything
+  // other than a revert propagates out of tryClassifyDomainName, so an unreachable
+  // chain cannot masquerade as "unclassifiable" and unlock this path.
+  let unclassifiableReason: string | undefined;
   const classification = await step("Classifying name", async () =>
-    classifyDomainName(session.ctx, label),
+    tryClassifyDomainName(session.ctx, label, {
+      onUnclassifiable: (reason) => {
+        unclassifiableReason = reason;
+      },
+    }),
   );
 
-  if (classification.requiredStatus !== ProofOfPersonhoodStatus.Reserved) {
+  if (classification === null) {
+    console.log(
+      chalk.yellow("  ⚠ PopRules cannot classify this label shape; ") +
+        chalk.gray("registerReserved bypasses PopRules, continuing"),
+    );
+    if (unclassifiableReason) {
+      console.log(chalk.gray(`    ${unclassifiableReason}`));
+    }
+  } else if (classification.requiredStatus !== ProofOfPersonhoodStatus.Reserved) {
     throw new Error(
       `Governance name must classify as Reserved; got ${ProofOfPersonhoodStatus[classification.requiredStatus]}`,
     );
@@ -514,7 +590,11 @@ async function executeGovernanceRegistration(
   await step("Checking availability", async () => ensureDomainNotRegistered(session.ctx, label));
 
   const { commitment, registration, secret } = await step("Generating commitment", async () =>
-    generateCommitment(session.ctx, label, { owner: session.caller, includeReverse: true }),
+    generateCommitment(session.ctx, label, {
+      owner: session.caller,
+      includeReverse: true,
+      governance: true,
+    }),
   );
   console.log(chalk.gray("  commitment: ") + chalk.blue(commitment));
   console.log(chalk.gray("  secret:     ") + chalk.yellow(redactSecret(secret)));
@@ -526,6 +606,8 @@ async function executeGovernanceRegistration(
     owner: session.caller,
     reserved: true,
     governance: true,
+    maxPrice: registration.maxPrice,
+    pricingVersion: registration.pricingVersion,
     secret,
     commitmentHash: commitment,
     transferDestination,
@@ -546,13 +628,39 @@ async function executeGovernanceRegistration(
     verifyDomainOwnership(session.ctx, label, session.caller),
   );
 
-  await step("Ensuring label store", async () =>
-    ensureLabelStoreReady(session.ctx, session.caller),
-  );
+  await syncLabelStoreBestEffort(session);
 
   if (transferDestination) {
     await replayTransfer(session, label, transferDestination);
   }
+}
+
+// The name is registered and its ownership verified before this runs, so a
+// store-sync failure is reported but must not fail the command. The step's
+// success line only prints for an actually synced result.
+async function syncLabelStoreBestEffort(session: RegistrationSession): Promise<void> {
+  const stepLabel = "Ensuring label store";
+  stepStart(stepLabel);
+  let error: unknown;
+  let pending: string[] = [];
+  try {
+    const result = await ensureLabelStoreReady(session.ctx, session.caller);
+    if (result.synced) {
+      stepOk(stepLabel);
+      return;
+    }
+    error = result.error;
+    pending = result.pending;
+  } catch (readError) {
+    error = readError;
+  }
+  console.warn(
+    chalk.yellow("  ⚠ Label store not synced; the registration itself is complete. ") +
+      chalk.gray(
+        (pending.length > 0 ? `Pending labels: ${pending.join(", ")}. ` : "") +
+          formatErrorMessage(error),
+      ),
+  );
 }
 
 async function executeRegularRegistration(
@@ -590,6 +698,8 @@ async function executeRegularRegistration(
     owner: ownerEvmAddress,
     reserved: enableReverseRecord,
     governance: false,
+    maxPrice: registration.maxPrice,
+    pricingVersion: registration.pricingVersion,
     secret,
     commitmentHash: commitment,
     transferDestination,
@@ -608,9 +718,7 @@ async function executeRegularRegistration(
   );
 
   if (!isCrossPayer) {
-    await step("Ensuring label store", async () =>
-      ensureLabelStoreReady(session.ctx, session.caller),
-    );
+    await syncLabelStoreBestEffort(session);
   }
 
   if (transferDestination) {
@@ -637,13 +745,23 @@ async function resumeRegistration(
     credential,
   };
 
-  printCommandHeader("Resuming", `${label}.dot`);
+  const domain = await formatDomainName(session.ctx, label);
+  printCommandHeader("Resuming", domain);
+
+  if (record.pricingVersion == null || record.maxPrice == null) {
+    throw new UnrevealableCommitmentError(
+      `Cached commitment for ${label} predates pricing binding and can no longer be revealed. ` +
+        `Discard it with \`dotns register clear ${label} --discard\` and register again.`,
+    );
+  }
 
   const registration: DomainRegistration = {
     label,
     owner: record.owner,
     secret: decryptCommitmentSecret(record, credential),
     reserved: record.reserved,
+    maxPrice: BigInt(record.maxPrice),
+    pricingVersion: BigInt(record.pricingVersion),
   };
 
   const alreadyOwned = await step("Checking on-chain ownership", async () =>
@@ -651,12 +769,12 @@ async function resumeRegistration(
   );
 
   if (alreadyOwned) {
-    console.log(chalk.green(`  ✓ ${label}.dot is already registered to ${record.owner}`));
+    console.log(chalk.green(`  ✓ ${domain} is already registered to ${record.owner}`));
     forgetCommitment(persistContext, label);
     return {
       ok: true as const,
       label,
-      domain: `${label}.dot`,
+      domain,
       caller: session.caller,
       owner: record.owner,
     };
@@ -671,6 +789,21 @@ async function resumeRegistration(
     status.committedTimestampSeconds === 0 || commitmentAge > status.maxAgeSeconds;
 
   if (needsRecommit) {
+    // Re-committing re-stamps committedPricingVersion to the version live now, but
+    // the reveal still supplies the cached pricingVersion baked into the commitment
+    // hash. If the cost model has rotated since the original commit, that reveal is
+    // doomed to PricingVersionMismatch, so fail before spending a recommit.
+    const livePricingVersion = await step("Checking pricing version", async () =>
+      readCurrentPricingVersion(session.ctx),
+    );
+    if (livePricingVersion !== registration.pricingVersion) {
+      throw new UnrevealableCommitmentError(
+        `Cost-model version changed since this commitment was created ` +
+          `(committed ${registration.pricingVersion}, now ${livePricingVersion}); it can no ` +
+          `longer be revealed. Discard it with \`dotns register clear ${label} --discard\` and ` +
+          `register again.`,
+      );
+    }
     await step("Re-submitting commitment", async () =>
       submitCommitment(session.ctx, record.commitmentHash),
     );
@@ -699,12 +832,12 @@ async function resumeRegistration(
     await replayTransfer(session, label, record.transferDestination);
   }
 
-  console.log(chalk.bold.green("✓ Registration Resumed") + chalk.gray(` ${label}.dot`));
+  console.log(chalk.bold.green("✓ Registration Resumed") + chalk.gray(` ${domain}`));
 
   return {
     ok: true as const,
     label,
-    domain: `${label}.dot`,
+    domain,
     caller: session.caller,
     owner: record.owner,
   };
@@ -743,14 +876,16 @@ export async function executeRetry(
 }
 
 type ClearSummary = {
-  ok: true;
+  ok: boolean;
   purged: string[];
   discarded: string[];
   resumed: string[];
+  failed: string[];
   cancelled: boolean;
 };
 
 async function promptPendingAction(
+  ctx: DotnsContext,
   pending: CommitmentRecord[],
 ): Promise<"register" | "discard" | "cancel"> {
   const readline = await import("node:readline/promises");
@@ -760,7 +895,7 @@ async function promptPendingAction(
   for (const record of pending) {
     console.log(
       chalk.gray("  • ") +
-        chalk.cyan(record.label + ".dot") +
+        chalk.cyan(await formatDomainName(ctx, record.label)) +
         chalk.gray(`  committed ${record.committedAtIso}`),
     );
   }
@@ -790,17 +925,19 @@ export async function executeClear(
   const records = loadCommitmentRecordsForClear(env, caller, options.name);
 
   const summary: ClearSummary = {
-    ok: true as const,
+    ok: true,
     purged: [],
     discarded: [],
     resumed: [],
+    failed: [],
     cancelled: false,
   };
 
   const pending: CommitmentRecord[] = [];
   for (const record of records) {
-    const registered = await step(`Checking ${record.label}.dot`, async () =>
-      isRegisteredTo(session.ctx, record.label, record.owner),
+    const registered = await step(
+      `Checking ${await formatDomainName(session.ctx, record.label)}`,
+      async () => isRegisteredTo(session.ctx, record.label, record.owner),
     );
     if (registered) {
       deleteCommitmentRecord(env, caller, record.label);
@@ -824,7 +961,7 @@ export async function executeClear(
   } else if (options.register) {
     action = "register";
   } else if (process.stdin.isTTY) {
-    action = await promptPendingAction(pending);
+    action = await promptPendingAction(session.ctx, pending);
   } else {
     throw new Error(
       `${pending.length} pending commitment(s) found. Pass --discard to delete them or --register to complete them.`,
@@ -845,9 +982,27 @@ export async function executeClear(
   }
 
   const credential = requireManifestCredential(context, options);
+  // Resume each record independently: one unrevealable record (for example a legacy
+  // commitment that predates pricing binding) must not abort the others in the batch.
+  // Only that expected case is swallowed; any other error (RPC, decrypt, chain) is
+  // unexpected and propagates.
   for (const record of pending) {
-    await resumeRegistration(context, record, credential, options.commitmentBuffer);
-    summary.resumed.push(record.label);
+    try {
+      await resumeRegistration(context, record, credential, options.commitmentBuffer);
+      summary.resumed.push(record.label);
+    } catch (error) {
+      if (!(error instanceof UnrevealableCommitmentError)) throw error;
+      summary.failed.push(record.label);
+    }
+  }
+
+  if (summary.failed.length > 0) {
+    summary.ok = false;
+    console.warn(
+      chalk.yellow(
+        `  ⚠ ${summary.failed.length} of ${pending.length} could not be resumed: ${summary.failed.join(", ")}`,
+      ),
+    );
   }
 
   return summary;
@@ -897,9 +1052,10 @@ export async function executeList(
       for (const row of rows) {
         const statusLabel =
           row.status === "registered" ? chalk.green("registered") : chalk.yellow("pending");
+        const domain = await formatDomainName(ctx, row.label);
         console.log(
           chalk.gray("  • ") +
-            chalk.cyan((row.label + ".dot").padEnd(24)) +
+            chalk.cyan(domain.padEnd(24)) +
             statusLabel +
             chalk.gray(`  ${row.committedAtIso}  ${row.env}`),
         );
