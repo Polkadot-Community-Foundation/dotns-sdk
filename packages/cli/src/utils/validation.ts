@@ -1,34 +1,57 @@
 import { decodeAddress, encodeAddress } from "@polkadot/util-crypto";
 import { isHex } from "viem";
 
-export function countTrailingDigits(label: string): number {
-  let count = 0;
-  for (let characterIndex = label.length - 1; characterIndex >= 0; characterIndex--) {
-    const asciiCode = label.charCodeAt(characterIndex);
-    // ASCII codes 48-57 represent digits 0-9
-    if (asciiCode >= 48 && asciiCode <= 57) {
-      count++;
-    } else {
-      break;
-    }
-  }
-  return count;
+// Longest label the contracts accept (StringUtils.MAX_DNS_LABEL_OCTETS).
+const MAX_DNS_LABEL_LEN = 63;
+// Digits the gateway allocates after a lite stem (StringUtils.LITE_SUFFIX_DIGITS).
+const LITE_SUFFIX_DIGITS = 2;
+
+// A name a person chose, mirroring StringUtils.isPersonLabel: lowercase ASCII
+// letters only. Stricter than an ordinary label, which also takes digits and
+// hyphens, because the gateway pallet's `BaseLabel::is_valid_person` admits
+// neither. No lower bound: how short a name may be is PopRules policy, not
+// format.
+export function isPersonLabel(value: string): boolean {
+  return value.length > 0 && value.length <= MAX_DNS_LABEL_LEN && /^[a-z]+$/.test(value);
 }
 
-export function stripTrailingDigits(label: string): string {
-  return label.replace(/\d+$/, "");
+// A lite personhood name, mirroring StringUtils.isLitePersonLabel: a
+// letters-only stem, one separator, then exactly LITE_SUFFIX_DIGITS digits
+// (`joseph.42`). The stem follows the person rule, so `web3.42` and
+// `andrew-x.42` are shapes the gateway cannot have issued.
+export function isLitePersonLabel(value: string): boolean {
+  const separator = value.length - LITE_SUFFIX_DIGITS - 1;
+  if (separator < 1 || value[separator] !== ".") return false;
+  return isPersonLabel(value.slice(0, separator)) && /^\d+$/.test(value.slice(separator + 1));
 }
 
-// Normalise a name or `name.dot` to its bare lowercase label. The single label
-// normaliser used across the CLI and core operations.
-export function normaliseLabel(name: string): string {
+// The part of `label` its tier is measured on, mirroring PopRules since v0.6.0:
+// the label as written, except a lite label, whose separator and allocated
+// digits come off first. The gateway allocates those digits to tell apart people
+// who chose the same stem; nothing allocates the digits in `web3`, so it
+// measures whole.
+export function baseLabelOf(label: string): string {
+  return isLitePersonLabel(label) ? label.slice(0, -(LITE_SUFFIX_DIGITS + 1)) : label;
+}
+
+// Normalise a name or `name.<tld>` to its bare lowercase label. The TLD is a
+// per-deployment value, so callers that know it (from the chain) pass it in;
+// `tld` defaults to "dot" for the mainnet deployment. Stripping the correct TLD
+// suffix is what distinguishes a second-level name (`alice.paseo`) from a
+// subdomain (`sub.alice`).
+export function normaliseLabel(name: string, tld = "dot"): string {
   const raw = name.trim().toLowerCase();
-  return raw.endsWith(".dot") ? raw.slice(0, -4) : raw;
+  const suffix = `.${tld}`;
+  return raw.endsWith(suffix) ? raw.slice(0, -suffix.length) : raw;
 }
 
-// True for a single label under .dot ("alice", "alice.dot"), false for subdomains ("sub.alice").
-export function isSecondLevelDotName(name: string): boolean {
-  return normaliseLabel(name).split(".").filter(Boolean).length === 1;
+// True for a single label under the active TLD ("alice", "alice.paseo"), false
+// for subdomains ("sub.alice"). A lite name keeps its separator on chain and is
+// hashed as one whole label, so it is a single name despite the dot.
+export function isSecondLevelDotName(name: string, tld = "dot"): boolean {
+  const bare = normaliseLabel(name, tld);
+  if (isLitePersonLabel(bare)) return true;
+  return bare.split(".").filter(Boolean).length === 1;
 }
 
 // A single canonical DNS label, mirroring the contract's StringUtils._isDnsLabel
@@ -50,6 +73,14 @@ export function validateCanonicalLabel(label: string, role = "label"): void {
 }
 
 export function validateDomainLabel(label: string): void {
+  // A lite name is a valid on-chain label, so the charset error below would misdescribe
+  // it. Only the gateway issues one, so say that instead.
+  if (isLitePersonLabel(label)) {
+    throw new Error(
+      `Invalid domain label: "${label}" is a lite personhood name; the gateway issues these and they cannot be registered here`,
+    );
+  }
+
   if (!/^[a-z0-9-]{3,}$/.test(label)) {
     throw new Error(
       "Invalid domain label: must contain only lowercase letters, digits, and hyphens, with minimum length of 3 characters",
@@ -60,29 +91,43 @@ export function validateDomainLabel(label: string): void {
     throw new Error("Invalid domain label: cannot start or end with hyphen");
   }
 
-  // PopRules accepts exactly zero or exactly two trailing digits. One, three, or more
-  // are rejected outright. The two-digit lite-gateway suffix is the only digit shape
-  // the protocol issues; allowing other counts would let users masquerade as gateway
-  // names or create labels no class cleanly owns.
-  const trailingDigitCount = countTrailingDigits(label);
-  if (trailingDigitCount !== 0 && trailingDigitCount !== 2) {
-    throw new Error(
-      `Invalid domain label: must have either no trailing digits or exactly two, found ${trailingDigitCount}`,
-    );
-  }
+  // Since dotns v0.6.0 an ordinary label is measured as written: digits carry no
+  // special meaning and no count is privileged or rejected ("web3", "blink182").
+  // A lite name is the dotted form issued by the gateway and never enters here.
 }
 
-export function validateGovernanceLabel(label: string): void {
+// A label for an operation on a name that already exists. Accepts a lite personhood
+// name alongside an ordinary label: since v0.6.0 the gateway stores `joseph.42` as one
+// whole label, and its holder can still delegate it or make it their primary name.
+// Registration paths keep {@link validateDomainLabel}, which refuses a lite name
+// because only the gateway can issue one.
+export function validateExistingNameLabel(label: string): void {
+  if (isLitePersonLabel(label)) return;
   validateDomainLabel(label);
+}
 
-  // `registerReserved` (governance mode) is the whitelisted/owner override for
-  // every name that the normal flow gates: reserved stems (<= 5 chars) AND the
-  // PoP tier (6-8 chars, which the docs call "PoP-Full / registerReserved-gated").
-  // The contract itself imposes no length limit on registerReserved; only stems
-  // of 9+ chars are openly registerable by anyone, so there is never a reason to
-  // take those through governance. Cap at 8 to keep the open tier on the normal
-  // priced flow.
-  const baseName = stripTrailingDigits(label);
+/**
+ * Validates a label for the governance registration path.
+ *
+ * Intentionally does **not** delegate to {@link validateDomainLabel}: this path
+ * does not go through PopRules, and a governance label is never a lite name.
+ * Checks the canonical label shape, a minimum length of 3, and bounds the base to
+ * the reserved class this path exists for.
+ *
+ * `executeGovernanceRegistration` documents why each bound is or is not applied.
+ */
+export function validateGovernanceLabel(label: string): void {
+  validateCanonicalLabel(label, "governance label");
+
+  if (label.length < 3) {
+    throw new Error("Invalid governance label: minimum length of 3 characters");
+  }
+
+  const baseName = baseLabelOf(label);
+  // Fork: `registerReserved` (governance mode) is the owner/grant override for every
+  // name the normal flow gates: reserved stems (<= 5 chars) AND the PoP tier (6-8).
+  // Only 9+ char stems are openly registerable, so cap at 8 to keep the open tier
+  // on the normal priced flow.
   if (baseName.length > 8) {
     throw new Error(
       `Invalid governance label: base name must be 8 characters or fewer (got ${baseName.length}); 9+ char names are open — use the normal registration flow`,

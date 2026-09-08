@@ -12,7 +12,7 @@ export enum ProofOfPersonhoodStatus {
 }
 
 export type DomainRegistration = {
-  /** Domain label without the .dot suffix (e.g., "example" for "example.dot") */
+  /** Bare domain label without the TLD suffix (for example "example" for "example.paseo"). */
   label: string;
   /** Ethereum address (H160) that will own the domain */
   owner: Address;
@@ -20,6 +20,19 @@ export type DomainRegistration = {
   secret: Hex;
   /** Whether this registration includes reverse record setup */
   reserved: boolean;
+  /**
+   * Slippage ceiling in wei: register() reverts with PriceExceedsMax when the
+   * charged amount exceeds this. Bound into the commitment hash, so it must be
+   * identical at commit and reveal.
+   */
+  maxPrice: bigint;
+  /**
+   * Cost-model version the registration is priced against. commit() stamps the
+   * live version; register() rejects a reveal whose pricingVersion differs from
+   * that stamp. Bound into the commitment hash, so it must be identical at commit
+   * and reveal.
+   */
+  pricingVersion: bigint;
 };
 
 export type TransactionStatus = "signing" | "broadcasting" | "included" | "finalized" | "failed";
@@ -58,9 +71,9 @@ export type ReviveCallResult = {
 };
 
 export type RegistrationCommandOptions = {
-  /** Domain label to register (without .dot) */
+  /** Domain label to register (bare, without the TLD suffix). */
   name?: string;
-  /** Parent domain label for subname registration (without .dot) */
+  /** Parent domain label for subname registration (bare, without the TLD suffix). */
   parent?: string;
   /** Proof of Personhood status requirement */
   status: "none" | "lite" | "full";
@@ -85,10 +98,10 @@ export type RegistrationCommandOptions = {
 };
 
 export type DomainOwnership = {
-  /** The label without the .dot */
+  /** The bare label, without the TLD suffix. */
   label?: string;
 
-  /** The label with the .dot */
+  /** The fully-qualified name, including the TLD suffix. */
   domain?: string;
 
   /** Whether the domain is currently registered */
@@ -669,7 +682,7 @@ export type SubnodeRecord = {
 };
 
 export type BaseNameReservation = {
-  /** Base name with trailing digits stripped (e.g. "mysite" from "mysite42"). */
+  /** The label as written, or a lite name's stem (e.g. "joseph" from "joseph.42"). */
   baseName: string;
   /** Whether the base name is currently reserved via the PopRules oracle. */
   isReserved: boolean;
@@ -680,7 +693,7 @@ export type BaseNameReservation = {
 };
 
 export type DomainLookupResult = {
-  /** Fully qualified domain name including the .dot suffix. */
+  /** Fully-qualified domain name including the TLD suffix. */
   domain: string;
   /** EIP-137 namehash of the fully qualified domain name. */
   node: string;
@@ -701,7 +714,7 @@ export type DomainLookupResult = {
     /** Human-readable free balance in native token units. */
     free: string;
   } | null;
-  /** PopRules reservation status for the base name, or null if the label has no trailing digits. */
+  /** PopRules reservation status for the base name, or null if the base is the whole label. */
   baseNameReservation: BaseNameReservation | null;
   /** The name's chat key from the PoP resolver (hex), or null if none is set. */
   chatKey: string | null;
@@ -754,24 +767,14 @@ export type IsMappedResult = {
   isMapped: boolean;
 };
 
-export type IsWhitelistedResult = {
-  /** SS58 substrate address that was checked */
-  address: string;
-  /** Corresponding EVM address (H160) */
-  evmAddress: string;
-  /** Whether the address is on the whitelist */
-  isWhitelisted: boolean;
-};
-
-export type WhitelistResult = {
-  /** SS58 substrate address that was whitelisted */
-  address: string;
-  /** Corresponding EVM address (H160) */
-  evmAddress: string;
-  /** Whether the whitelist operation succeeded */
-  whitelisted: boolean;
-  /** Transaction hash of the whitelist extrinsic */
-  txHash: string;
+export type NameGrantResult = {
+  label: string;
+  /** `DotnsNameWhitelist.statusOf`: Open, Reserved, or Claimed. */
+  status: string;
+  /** Beneficiary a grant names; zero address while no grant stands. */
+  grantee: string;
+  /** Whether the claim window is currently open. */
+  windowOpen: boolean;
 };
 
 export type UploadManifest = {
