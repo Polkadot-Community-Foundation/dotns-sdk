@@ -124,8 +124,9 @@ describe("validateGovernanceLabel stem-length rule", () => {
   });
 
   test("accepts PoP-tier stems (6-8 characters) — the registerReserved override", () => {
-    expect(() => validateGovernanceLabel("w3spay")).not.toThrow(); // 6
-    expect(() => validateGovernanceLabel("feedback")).not.toThrow(); // 8
+    // 6 and 8 characters, the ends of the PoP tier.
+    expect(() => validateGovernanceLabel("w3spay")).not.toThrow();
+    expect(() => validateGovernanceLabel("feedback")).not.toThrow();
   });
 
   test("rejects stems longer than eight characters (open tier)", () => {
@@ -137,9 +138,9 @@ describe("validateGovernanceLabel stem-length rule", () => {
   // Since v0.6.0 `PopRules._stemEnd` measures every label as written unless it is a
   // lite label, so a trailing digit counts towards the base.
   test("measures an ordinary label whole, digits included", () => {
-    expect(() => validateGovernanceLabel("abcd1")).not.toThrow();
-    expect(() => validateGovernanceLabel("abcde1")).toThrow(
-      /base name must be 5 characters or fewer/,
+    expect(() => validateGovernanceLabel("abcdefg1")).not.toThrow();
+    expect(() => validateGovernanceLabel("abcdefgh1")).toThrow(
+      /base name must be 8 characters or fewer/,
     );
   });
 
@@ -163,12 +164,10 @@ describe("validateGovernanceLabel measures the base as v0.6.0 does", () => {
     expect(() => validateGovernanceLabel("game")).not.toThrow();
   });
 
-  test("rejects once the label as written leaves the reserved band", () => {
-    expect(() => validateGovernanceLabel("dim123")).toThrow(
-      /base name must be 5 characters or fewer/,
-    );
-    expect(() => validateGovernanceLabel("dim9999")).toThrow(
-      /base name must be 5 characters or fewer/,
+  test("rejects once the label as written leaves the governance band", () => {
+    expect(() => validateGovernanceLabel("dim123")).not.toThrow();
+    expect(() => validateGovernanceLabel("dim999999")).toThrow(
+      /base name must be 8 characters or fewer/,
     );
   });
 

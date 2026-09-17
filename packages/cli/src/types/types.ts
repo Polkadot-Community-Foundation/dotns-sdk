@@ -668,7 +668,7 @@ export type BulletinContext = BaseChainContext & {
 };
 
 export type SubnodeRecord = {
-  /** Parent node hash (keccak256 of parent full name) */
+  /** EIP-137 namehash of the parent name, folded per label from the TLD node. */
   parentNode: Hex;
 
   /** Label of the subnode to register (single label, no dots) */
@@ -679,6 +679,10 @@ export type SubnodeRecord = {
 
   /** Address that will own the new subnode */
   owner: Address;
+
+  /** Whether the registry indexes the subname into the owner's LabelStore.
+   *  When false only the ownership and resolver record is written. */
+  persist: boolean;
 };
 
 export type BaseNameReservation = {
