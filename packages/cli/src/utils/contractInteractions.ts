@@ -180,17 +180,30 @@ export async function submitContractTransaction(
   }
 }
 
-// Pure namehash of `label` rooted at `tldNode`, mirroring the on-chain
-// `LabelUtils.namehashUnder(tldNode, labelhash)`. The TLD node is a runtime value
-// (`DotnsProtocolRegistry.tldNode()`), not a constant: distinct deployments use
-// distinct TLDs (for example `dot` on mainnet, `paseo` on the Paseo testnet), so
-// the caller must supply the node read from chain rather than assuming `.dot`.
-export function deriveDomainNode(tldNode: Hex, label: string): Hex {
-  const labelhash = keccak256(toBytes(label));
-  return keccak256(concatHex([tldNode, labelhash]));
+// One EIP-137 step: the node of `label` directly under `parent`, mirroring the
+// on-chain `LabelUtils.namehashUnder(parent, labelhash)`.
+function namehashUnder(parent: Hex, label: string): Hex {
+  return keccak256(concatHex([parent, keccak256(toBytes(label))]));
 }
 
-// The minted ERC721 tokenId is `uint256(node)` (see DotnsRegistrarController).
-export function deriveDomainTokenId(tldNode: Hex, label: string): bigint {
-  return BigInt(deriveDomainNode(tldNode, label));
+// EIP-137 namehash of a bare name (TLD already stripped) under `tldNode`: labels
+// fold right to left, as in `DotnsRegistry._parentNamehash`. Since dotns v0.7.0
+// this also covers a lite personhood name: `joseph.42` is `joseph` beneath the
+// container `42` (`SubnodeUtils.liteSubnodeOf`), which is exactly this fold.
+// `tldNode` is read from the protocol registry; each deployment has its own TLD.
+export function deriveDomainNode(tldNode: Hex, name: string): Hex {
+  return name.split(".").reduceRight<Hex>((parent, label) => namehashUnder(parent, label), tldNode);
+}
+
+// Pre-v0.7.0 deployments minted a lite name as ONE label — the whole dotted
+// string hashed flat under the TLD. Names minted before an in-place upgrade
+// keep living at this node, so readers fall back to it when the folded node
+// has no record (see `domainNode` in core/naming.ts).
+export function deriveLegacyLiteNode(tldNode: Hex, liteLabel: string): Hex {
+  return namehashUnder(tldNode, liteLabel);
+}
+
+// The minted ERC721 tokenId is `uint256(node)`; only second-level names are tokenised.
+export function deriveDomainTokenId(tldNode: Hex, name: string): bigint {
+  return BigInt(deriveDomainNode(tldNode, name));
 }
