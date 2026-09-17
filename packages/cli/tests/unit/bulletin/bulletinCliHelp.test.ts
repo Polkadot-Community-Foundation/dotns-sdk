@@ -89,7 +89,7 @@ test("bulletin authorize help shows default values", async () => {
   expect(result.exitCode).toBe(HARNESS_HELP_SUCCESS_EXIT_CODE);
 
   expect(collapseWhitespace(result.combinedOutput)).toContain("defaults to active");
-  expect(result.combinedOutput).toContain("1000000");
+  expect(result.combinedOutput).toContain("104857600");
 });
 
 test("bulletin history help shows options", async () => {
