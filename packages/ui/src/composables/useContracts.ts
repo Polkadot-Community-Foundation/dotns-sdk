@@ -7,7 +7,7 @@ import {
   type ContractDef,
   type TxOptions,
 } from "@parity/product-sdk-contracts";
-import { devnet_asset_hub } from "@polkadot-community-foundation/product-sdk-descriptors/devnet-asset-hub";
+import { devnet_asset_hub } from "@parity/product-sdk-descriptors/devnet-asset-hub";
 import type { HexString, SS58String } from "polkadot-api";
 import cdmJsonRaw from "../../cdm.json" with { type: "json" };
 import { labelStoreAbi } from "@/lib/abis/labelStore";
@@ -84,10 +84,17 @@ export async function getContractManager(): Promise<ContractManager> {
       // Live address resolution: contract addresses are pulled from the on-chain
       // CDM meta-registry (robust to redeploys), ABIs from the installed snapshot.
       // registryOrigin is the read-only dry-run origin for the registry lookup.
-      return ContractManager.fromLiveClient(cdmJson, chain.raw.assetHub, devnet_asset_hub, {
-        signerManager,
-        registryOrigin: ZERO_SUBSTRATE_ADDRESS as SS58String,
-      });
+      const manager = await ContractManager.fromLiveClient(
+        cdmJson,
+        chain.raw.assetHub,
+        devnet_asset_hub,
+        {
+          signerManager,
+          registryOrigin: ZERO_SUBSTRATE_ADDRESS as SS58String,
+        },
+      );
+      if (!manager.ok) throw manager.error;
+      return manager.value;
     })();
   }
   return managerPromise;

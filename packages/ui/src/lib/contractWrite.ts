@@ -6,7 +6,8 @@ import { decodeRevertReason } from "@/lib/contractErrors";
 import { WRITE_TX_DEFAULTS } from "@/composables/useContracts";
 import { useWalletStore } from "@/store/useWalletStore";
 
-type WriteResult = { ok: boolean; txHash: string; dispatchError?: unknown };
+type WriteOutcome = { ok: boolean; txHash: string; dispatchError?: unknown };
+type WriteResult = { ok: true; value: WriteOutcome } | { ok: false; error: unknown };
 type SubstrateError = { type?: string; value?: { type?: string } };
 
 function failure(action: string, detail: string | undefined): string {
@@ -86,9 +87,13 @@ export function useContractWrite() {
       throw new Error(describeContractError(error, action));
     }
     if (!result.ok) {
-      throw new Error(failure(action, describeDispatchError(result.dispatchError)));
+      throw new Error(describeContractError(result.error, action));
     }
-    return result.txHash as Hash;
+    const outcome = result.value;
+    if (!outcome.ok) {
+      throw new Error(failure(action, describeDispatchError(outcome.dispatchError)));
+    }
+    return outcome.txHash as Hash;
   }
 
   return { txOptions, batchOptions, withWrite, submitWrite };

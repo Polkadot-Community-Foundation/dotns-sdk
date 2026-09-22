@@ -10,7 +10,7 @@ import {
 import { getChainClient } from "@/composables/useTypedAPI";
 import { useWalletStore } from "./useWalletStore";
 import { batchSubmitAndWatch, type BatchApi } from "@parity/product-sdk-tx";
-import { useContractWrite } from "@/lib/contractWrite";
+import { describeContractError, useContractWrite } from "@/lib/contractWrite";
 import { computeDomainTokenId, normalizeDomainName, ZERO_SUBSTRATE_ADDRESS } from "../utils";
 import type { TextRecord, TransactionResult } from "@/type";
 
@@ -76,13 +76,17 @@ export const useResolverStore = defineStore("useResolverStore", () => {
     return withWrite(async () => {
       const resolver = await getContract("@dotns/content-resolver");
       const node = namehash(`${normalizeDomainName(domain)}.dot`);
-      const calls = await Promise.all(
+      const prepared = await Promise.all(
         validRecords.map((record) =>
           resolver.setText!.prepare(node, record.key, record.value, {
             storageDepositLimit: WRITE_TX_DEFAULTS.storageDepositLimit,
           }),
         ),
       );
+      const calls = prepared.map((call) => {
+        if (!call.ok) throw new Error(describeContractError(call.error, "Profile update"));
+        return call.value;
+      });
       const chain = await getChainClient();
       const signer = walletStore.getInjected();
       const hash = await submitWrite(

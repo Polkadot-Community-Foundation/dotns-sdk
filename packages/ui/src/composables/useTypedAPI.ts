@@ -1,4 +1,4 @@
-import { getChainAPI } from "@polkadot-community-foundation/product-sdk-chain-client";
+import { getChainAPI } from "@parity/product-sdk-chain-client";
 
 type ChainClient = Awaited<ReturnType<typeof getChainAPI<"devnet">>>;
 
