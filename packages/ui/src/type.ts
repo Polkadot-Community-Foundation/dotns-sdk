@@ -16,6 +16,9 @@ export type Registration = {
   owner: Address;
   secret: Hash;
   reserved: boolean;
+  // Sealed into the commitment preimage; register() rejects a mismatch.
+  maxPrice: bigint;
+  pricingVersion: bigint;
 };
 
 export type TransactionResult = {
