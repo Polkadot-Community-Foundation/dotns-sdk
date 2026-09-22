@@ -341,7 +341,7 @@ const canRegister = computed(() => {
   );
 });
 
-let debounceTimer: number | NodeJS.Timeout;
+let debounceTimer: number | ReturnType<typeof setTimeout>;
 const debouncedCheck = () => {
   clearTimeout(debounceTimer);
   status.value = null;

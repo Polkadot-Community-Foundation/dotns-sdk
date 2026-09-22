@@ -184,7 +184,7 @@ function handleEscape(e: KeyboardEvent) {
   }
 }
 const elapsed = ref(0);
-let timer: number | null | NodeJS.Timeout = null;
+let timer: number | null | ReturnType<typeof setTimeout> = null;
 
 const explorer = networkStore.currentNetwork?.blockExplorerUrls?.[0] || BLOCK_EXPLORER;
 

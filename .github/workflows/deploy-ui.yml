@@ -143,6 +143,39 @@ jobs:
       dotns-mnemonic: ${{ secrets.DOTNS_MNEMONIC }}
       bulletin-mnemonic: ${{ secrets.DOTNS_MNEMONIC_DEPLOY_UI }}
 
+  # dot.li loads app.<name>.dot before falling back to <name>.dot, so a release
+  # that only moves dotns.dot never reaches users while app.dotns.dot exists.
+  point-app-subname:
+    name: Point app.dotns.dot at the release
+    needs: [deploy-production]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup CLI
+        uses: ./.github/actions/setup-cli
+        with:
+          source: release
+
+      - name: Set app.dotns.dot contenthash
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$DOTNS_MNEMONIC"
+          [[ -n "$CID" ]] || { echo "::error::deploy-production produced no CID"; exit 1; }
+          dotns content set app.dotns "$CID" --env devnet
+          dotns content view app.dotns --env devnet | tee view.txt
+          grep -q "$CID" view.txt || { echo "::error::app.dotns.dot does not resolve to $CID"; exit 1; }
+        env:
+          CID: ${{ needs.deploy-production.outputs.cid }}
+          DOTNS_MNEMONIC: ${{ secrets.DOTNS_MNEMONIC }}
+
   comment:
     name: Update PR Comment
     if: always() && github.event_name == 'pull_request'
