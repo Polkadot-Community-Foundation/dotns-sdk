@@ -4,7 +4,7 @@
  * Decimal Constants for PAS Token and EVM Compatibility
  *
  * @remarks
- * Paseo Asset Hub Next uses a 10-decimal native token that is converted
+ * Paseo Asset Hub uses a 10-decimal native token that is converted
  * to 18-decimal wei for EVM compatibility via the Revive pallet. (Matches
  * the CLI's DEFAULT_NATIVE_TOKEN_DECIMALS=10 / EVM_TOKEN_DECIMALS=18.)
  *
