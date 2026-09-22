@@ -113,6 +113,30 @@ function isSameSubstrateAccount(a: string, b: string): boolean {
   }
 }
 
+// Headroom added to a dry-run's `weight_required` before it becomes the extrinsic's
+// `weight_limit`. The dry-run measures the state it observes; execution lands in a later
+// block whose state can need more proof (a first-time write that grows a storage trie, a
+// LabelStore proxy indexing a brand-new label). An exact limit then runs out of proof
+// mid-call, which pallet-revive surfaces as a revert with EMPTY data — indistinguishable
+// from a contract-level failure. `registry.setSubnodeOwner` on a fresh subname hit this.
+// 25% matches `applyWeightBuffer` in @parity/product-sdk-tx.
+const WEIGHT_BUFFER_PERCENT = 25n;
+
+/** Weight in the shape `Revive.call` takes as its `weight_limit`. */
+export type WeightLimit = {
+  ref_time: bigint;
+  proof_size: bigint;
+};
+
+/** Scale both weight components up by {@link WEIGHT_BUFFER_PERCENT}. */
+export function applyWeightBuffer(weight: SubstrateWeight): WeightLimit {
+  const multiplier = 100n + WEIGHT_BUFFER_PERCENT;
+  return {
+    ref_time: (weight.referenceTime * multiplier) / 100n,
+    proof_size: (weight.proofSize * multiplier) / 100n,
+  };
+}
+
 export class ReviveClientWrapper {
   public client: PolkadotApiClient;
   private mappedAccounts: Set<string> = new Set();
@@ -409,10 +433,7 @@ export class ReviveClientWrapper {
       throw new Error(`Contract execution would revert: ${gasEstimate.revertData ?? "0x"}`);
     }
 
-    const weightLimit = {
-      proof_size: gasEstimate.gasRequired.proofSize,
-      ref_time: gasEstimate.gasRequired.referenceTime,
-    };
+    const weightLimit = applyWeightBuffer(gasEstimate.gasRequired);
 
     // Add 20% buffer to storage deposit, minimum 2 PAS
     const minimumStorageDeposit = 2_000_000_000_000n;
