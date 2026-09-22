@@ -8,11 +8,13 @@ import type { NetworkConfig } from "@/type";
 export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
   420420417: {
     chainId: 420420417,
-    chainName: "Paseo Next Asset Hub",
+    chainName: "Paseo Asset Hub (devnet)",
     nativeCurrency: {
       name: "Paseo",
       symbol: "PAS",
-      decimals: 18,
+      // Native PAS on Asset Hub has 10 decimals; 18 is the wei view Revive exposes
+      // to contract space. Money math uses DECIMALS / PAS_DECIMALS, not this field.
+      decimals: 10,
     },
     // TODO(devnet): set the block explorer URL once known.
     blockExplorerUrls: [],
