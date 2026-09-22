@@ -14,16 +14,20 @@ import type { ReviveClientWrapper } from "../client/polkadotClient";
 import type { TransactionStatus } from "../types/types";
 import { withTimeout } from "./formatting";
 
-// An empty-data revert has two common, unrelated causes, so the hint names both
-// rather than asserting the origin is unmapped: a genuinely unmapped origin makes
-// pallet-revive reject reads with empty data, but so does calling a selector the
-// deployed contract does not expose, which is exactly what a stale ABI produces.
+// An empty-data revert has three common, unrelated causes, so the hint names all of
+// them rather than asserting the origin is unmapped: a genuinely unmapped origin makes
+// pallet-revive reject reads with empty data, so does calling a selector the deployed
+// contract does not expose (which is exactly what a stale ABI produces), and so does
+// exhausting the granted weight mid-call, since a call that never finished has no revert
+// bytes to carry. Naming only the first two sent a subname-registration failure hunting
+// an ABI mismatch for hours.
 export const EMPTY_DATA_REVERT_HINT =
-  "An empty-data revert usually means one of two things: the origin SS58 is not " +
+  "An empty-data revert usually means one of three things: the origin SS58 is not " +
   "mapped on Asset Hub Revive (run `dotns account map`, or send any signed " +
-  "transaction from this account, then retry), or the deployed contract exposes no " +
+  "transaction from this account, then retry), the deployed contract exposes no " +
   "function for this call's selector (the synced ABI may be out of date for this " +
-  "deployment).";
+  "deployment), or the call ran out of the weight it was granted (a dry-run that " +
+  "succeeds while the submitted call reverts empty points here).";
 
 export function isRevertFlag(flags: bigint): boolean {
   return (flags & 1n) === 1n;
@@ -34,8 +38,8 @@ export function isRevertFlag(flags: bigint): boolean {
  * failure is an answer rather than a failure to reach the chain.
  *
  * Deliberately not raised for the empty-data revert, whose causes are an unmapped
- * origin or a stale-ABI selector mismatch ({@link EMPTY_DATA_REVERT_HINT}) — setup
- * problems with their own remedies — nor for RPC failures, ABI mismatches or decode
+ * origin, a stale-ABI selector mismatch, or exhausted weight
+ * ({@link EMPTY_DATA_REVERT_HINT}) — setup problems with their own remedies — nor for RPC failures, ABI mismatches or decode
  * errors. Callers that treat a revert as information must not treat those the same
  * way.
  */
