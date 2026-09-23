@@ -72,6 +72,7 @@ export const useDomainStore = defineStore("useDomainStore", () => {
     name: string,
     ownerEvm: Address,
     reserved: boolean,
+    governance = false,
   ): Promise<Commitment> {
     return withContractRecovery(async () => {
       walletStore.ensureWalletConnected();
@@ -84,11 +85,29 @@ export const useDomainStore = defineStore("useDomainStore", () => {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("")}`;
 
+      // Same sealing as the CLI: the reveal checks the name price against
+      // maxPrice (10% headroom, excess refunded) and requires the pricing
+      // version stamped at commit. registerReserved never reads maxPrice.
+      const popRules = await getContract("@dotns/pop-rules");
+      const version = await popRules.pricingVersion!.query({ origin: ZERO_SUBSTRATE_ADDRESS });
+      if (!version.success) throw new Error("Failed to read pricing version");
+      let maxPrice = 0n;
+      if (!governance) {
+        const priced = await popRules.priceWithoutCheck!.query(name, ownerEvm, {
+          origin: ZERO_SUBSTRATE_ADDRESS,
+        });
+        if (!priced.success) throw new Error("Failed to quote name price");
+        const price = (priced.value as PriceWithMeta).price;
+        maxPrice = price + price / 10n;
+      }
+
       const registration: Registration = {
         label: name,
         owner: ownerEvm,
         secret,
         reserved,
+        maxPrice,
+        pricingVersion: version.value as bigint,
       };
 
       const result = await controller.makeCommitment!.query(registration, {

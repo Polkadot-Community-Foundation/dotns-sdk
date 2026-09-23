@@ -477,6 +477,7 @@ async function startRegistration() {
       props.handle,
       owner,
       isCrossOwner.value ? false : isReserved.value,
+      isGovernance.value,
     );
 
     const result = await domainStore.commitRegistration(commitment);
