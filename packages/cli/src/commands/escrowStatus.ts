@@ -5,7 +5,8 @@ import { formatUnixSeconds } from "../utils/formatting";
 /// layer and the preflight asserts all read one definition of each state.
 
 /// A position is the user's escrow deposit only while it holds a refundable amount. Zero-amount
-/// entries are PopFull/PopLite lifecycle markers or already-withdrawn slots, not staked deposits.
+/// entries come from cross-paid registrations, names priced at zero, or already-withdrawn
+/// positions; they hold no refundable deposit.
 export function isRefundableDeposit(position: Pick<ReleasePosition, "amount">): boolean {
   return position.amount > 0n;
 }

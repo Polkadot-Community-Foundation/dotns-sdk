@@ -168,8 +168,9 @@ export async function withdrawName(ctx: DotnsContext, label: string): Promise<st
   );
 }
 
-/// Drains the legacy pull-payment ledger that holds registration-overpayment fallbacks. The
-/// caller receives the amount accumulated against their address.
+/// Drains the caller's pull-payment balance: deposits settled by `withdraw` or `reclaim`, plus
+/// registration overpayments the controller could not refund directly. The caller receives
+/// the amount accumulated against their address.
 export async function claimWithdrawal(ctx: DotnsContext): Promise<string> {
   return write(
     ctx,

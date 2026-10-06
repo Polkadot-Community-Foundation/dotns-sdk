@@ -1,6 +1,6 @@
-// Public SDK surface: the typed, named DotNS operations, driven by a caller-supplied
+// Public SDK surface: the typed, named dotNS operations, driven by a caller-supplied
 // PolkadotSigner through a DotnsContext. No raw-contract access, ABIs, calldata
-// helpers, or mutable global state are exported — those stay internal to the CLI.
+// helpers, or mutable global state are exported; those stay internal to the CLI.
 
 export {
   createDotnsContext,
@@ -21,7 +21,6 @@ export {
   readCommitmentStatus,
   getUserProofOfPersonhoodStatus,
   getPriceAndValidateEligibility,
-  quoteCrossPayerFriction,
   finalizeRegularRegistration,
   finalizeGovernanceRegistration,
   registerSubnode,
@@ -47,8 +46,8 @@ export type {
   RegisterNameOptions,
 } from "../commands/register";
 
-export { resolveTransferRecipient, transferName } from "../cli/transfer";
-export type { TransferResult, TransferNameOptions } from "../cli/transfer";
+export { quoteTransferFee, resolveTransferRecipient, transferName } from "../cli/transfer";
+export type { TransferResult } from "../cli/transfer";
 
 export {
   getEscrowPosition,
