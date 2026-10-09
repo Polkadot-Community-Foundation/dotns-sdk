@@ -8,6 +8,7 @@ export const ENV = {
   RPC: "DOTNS_RPC",
   BULLETIN_RPC: "DOTNS_BULLETIN_RPC",
   MNEMONIC: "DOTNS_MNEMONIC",
+  SKIP_CHAIN_CHECK: "DOTNS_SKIP_CHAIN_CHECK",
   KEY_URI: "DOTNS_KEY_URI",
   // Keystore directory (per-account files live here)
   // Example: ~/.dotns/keystore/
@@ -99,7 +100,7 @@ export type KeystoreAuthOption = keyof typeof KEYSTORE_AUTH_FLAGS;
 const KEYSTORE_AUTH_ENV = [ENV.MNEMONIC, ENV.KEY_URI, ENV.KEYSTORE_PASSWORD] as const;
 
 // The QR signer derives the account from the paired wallet, so any local-keystore input
-// (flag or env var) is contradictory; reject it rather than silently ignoring it.
+// (flag or env var) is contradictory, so reject it explicitly.
 export function assertSignerOptions(
   options: { signer?: string } & Partial<Record<KeystoreAuthOption, unknown>>,
 ): void {

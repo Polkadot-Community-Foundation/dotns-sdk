@@ -61,7 +61,7 @@ function cleanupHeliaAndExit(code: number): never {
 }
 import { normalizeUploadMaxRetries } from "../../bulletin/uploadRetry";
 import { addAuthOptions } from "./authOptions";
-import { prepareContext } from "../context";
+import { assertExpectedChain, prepareContext } from "../context";
 import { ENV, resolveBulletinRpc, resolveDotnsEnvironment, resolveRpc } from "../env";
 import {
   DEFAULT_CHUNK_SIZE_BYTES,
@@ -127,7 +127,7 @@ export function resolveBulletinCacheAssetHubRpc(options: {
   if (bulletinOverridden && !hasExplicitAssetHubRpc && !hasExplicitEnvironment) {
     throw new Error(
       "bulletin upload --cache with a custom Bulletin RPC requires --env, DOTNS_ENV, or --rpc " +
-        "so the on-chain Store write targets the matching DotNS Asset Hub environment.",
+        "so the on-chain Store write targets the matching dotNS Asset Hub environment.",
     );
   }
 
@@ -289,7 +289,7 @@ function writeBulletinJsonError(error: unknown): never {
 /**
  * Warn when the dev-default authorizer signer is used against an environment
  * where the bulletin Authorizer is almost certainly *not* the default
- * (previewnet). Silent on `paseo-v2` (local dev) and on explicit overrides.
+ * (previewnet). Silent on every other environment (paseo-v2, devnet) and on explicit overrides.
  */
 export function warnIfDevKeyOnTestnet(signerKeyUri: string, environmentId: string): void {
   if (signerKeyUri !== DEFAULT_BULLETIN_AUTHORIZER_KEY_URI) return;
@@ -502,7 +502,13 @@ export function attachBulletinCommands(root: Command): void {
         );
 
         const signerContext = await withBulletinHumanOutput(reporterMode, () =>
-          prepareContext({ keyUri: signerKeyUri, useBulletin: true, bulletinRpc }),
+          prepareContext({
+            keyUri: signerKeyUri,
+            useBulletin: true,
+            bulletinRpc,
+            env: mergedOptions.env,
+            network: mergedOptions.network,
+          }),
         );
 
         if (!jsonOutput) {
@@ -622,6 +628,8 @@ export function attachBulletinCommands(root: Command): void {
           keyUri: signerKeyUri,
           useBulletin: true,
           bulletinRpc,
+          env: mergedOptions.env,
+          network: mergedOptions.network,
         });
 
         const result = await refreshAccountAuthorization({
@@ -1027,15 +1035,23 @@ export function attachBulletinCommands(root: Command): void {
             state: "start",
             message: "Saving CID to on-chain Store...",
           });
+          // Set once Asset Hub reports it; a failure before that names no symbol.
+          let assetHubTokenSymbol: string | undefined;
           try {
             const { cacheCidToStore } = await import("../../commands/storeManagement");
             const { createClient } = await import("polkadot-api");
             const { getWsProvider } = await import("polkadot-api/ws-provider/node");
             const { paseo } = await import("@polkadot-api/descriptors");
-            const { ReviveClientWrapper } = await import("../../client/polkadotClient");
+            const { ReviveClientWrapper, getChainTokenInfo } =
+              await import("../../client/polkadotClient");
             const rpc = resolveBulletinCacheAssetHubRpc(mergedOptions);
-            const typedApi = createClient(getWsProvider(rpc)).getTypedApi(paseo);
-            const clientWrapper = new ReviveClientWrapper(typedApi as any);
+            const cacheClient = createClient(getWsProvider(rpc));
+            await assertExpectedChain(cacheClient);
+            const typedApi = cacheClient.getTypedApi(paseo);
+            // The Store lives on Asset Hub, so the write uses Asset Hub's token info.
+            const tokenInfo = await getChainTokenInfo(cacheClient);
+            assetHubTokenSymbol = tokenInfo.nativeTokenSymbol;
+            const clientWrapper = new ReviveClientWrapper(typedApi as any, tokenInfo);
             const evmAddress = await clientWrapper.getEvmAddress(context.substrateAddress);
 
             await cacheCidToStore({
@@ -1050,12 +1066,13 @@ export function attachBulletinCommands(root: Command): void {
             const msg = formatErrorMessage(cacheError);
             let reason: string;
             if (/insufficient|balance/i.test(msg)) {
-              reason =
-                "insufficient PAS balance on Asset Hub — fund the account and retry with --cache";
-            } else if (/no store deployed|store not deployed/i.test(msg)) {
-              reason = "no Store deployed — register a domain first or deploy a Store manually";
+              const balance = assetHubTokenSymbol ? `${assetHubTokenSymbol} balance` : "balance";
+              reason = `insufficient ${balance} on Asset Hub — fund the account and retry with --cache`;
+            } else if (/no user store claimed/i.test(msg)) {
+              reason = "no User Store claimed; run `dotns store claim` and retry with --cache";
             } else if (/not authorized|unauthorized/i.test(msg)) {
-              reason = "Store not authorised for writes — run dotns store ensure-auth";
+              reason =
+                "Store not authorised for writes; check that this account owns the User Store (`dotns store info`)";
             } else {
               reason = msg;
             }

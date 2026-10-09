@@ -1,6 +1,6 @@
-// Public SDK surface: the typed, named DotNS operations, driven by a caller-supplied
+// Public SDK surface: the typed, named dotNS operations, driven by a caller-supplied
 // PolkadotSigner through a DotnsContext. No raw-contract access, ABIs, calldata
-// helpers, or mutable global state are exported — those stay internal to the CLI.
+// helpers, or mutable global state are exported; those stay internal to the CLI.
 
 export {
   createDotnsContext,
@@ -21,7 +21,6 @@ export {
   readCommitmentStatus,
   getUserProofOfPersonhoodStatus,
   getPriceAndValidateEligibility,
-  quoteCrossPayerFriction,
   finalizeRegularRegistration,
   finalizeGovernanceRegistration,
   registerSubnode,
@@ -47,8 +46,8 @@ export type {
   RegisterNameOptions,
 } from "../commands/register";
 
-export { resolveTransferRecipient, transferName } from "../cli/transfer";
-export type { TransferResult, TransferNameOptions } from "../cli/transfer";
+export { quoteTransferFee, resolveTransferRecipient, transferName } from "../cli/transfer";
+export type { TransferResult } from "../cli/transfer";
 
 export {
   getEscrowPosition,
@@ -56,17 +55,42 @@ export {
   getPendingWithdrawal,
   listRefunds,
   releaseName,
+  redeemName,
   withdrawName,
   claimWithdrawal,
   claimRefund,
   claimRefundsBatch,
+} from "../commands/escrow";
+export type {
+  EscrowPositionView,
+  ReleaseResult,
+  RedeemResult,
+  RefundEntryView,
+  RefundsListResult,
+} from "../commands/escrow";
+export {
   isRefundableDeposit,
   totalEscrowAmount,
   cooldownRemainingSeconds,
   formatCooldown,
   formatPositionStatus,
-} from "../commands/escrow";
-export type { EscrowPositionView, RefundEntryView, RefundsListResult } from "../commands/escrow";
+  releasePhase,
+  formatReleasePhase,
+} from "../commands/escrowStatus";
+export type { ReleasePhase } from "../commands/escrowStatus";
+export { inspectName } from "../commands/inspectName";
+export { formatUnixSeconds, nowSeconds } from "../utils/formatting";
+export {
+  assertRegistered,
+  assertIsToken,
+  assertNotSoulbound,
+  assertIsOwner,
+  assertReleasable,
+  assertRedeemable,
+  explainUnavailable,
+} from "../commands/preflight";
+export type { NameAction } from "../commands/preflight";
+export type { NameInspection, ReleasePosition } from "../commands/inspectName";
 
 export { getContentHash, setContentHash } from "../commands/contentHash";
 export type { ContentViewResult, ContentSetResult } from "../commands/contentHash";
@@ -109,7 +133,7 @@ export { checkAccountMapped } from "../commands/accountChecks";
 
 export { DOTNS_ENVIRONMENTS } from "../utils/constants";
 export type { DotnsEnvironmentId, DotnsContractAddresses } from "../utils/constants";
-export { ReviveClientWrapper } from "../client/polkadotClient";
-export type { PolkadotApiClient } from "../client/polkadotClient";
+export { ReviveClientWrapper, getChainTokenInfo } from "../client/polkadotClient";
+export type { PolkadotApiClient, NativeTokenInfo } from "../client/polkadotClient";
 export { ProofOfPersonhoodStatus } from "../types/types";
 export type { TransactionStatus, DomainLookupResult } from "../types/types";
