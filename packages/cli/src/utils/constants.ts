@@ -20,10 +20,9 @@ import DotnsNameWhitelist from "../../abis/DotnsNameWhitelist.json" with { type:
 // gateway is a config change, not a code change.
 
 // `label` is the bare second-level label, without any TLD. The dot.li gateways
-// already carry their own domain (for example `dev-dot.li`), so the view URL is
-// `${label}.${gateway}`. Callers must pass the resolved label, not a
-// fully-qualified name, otherwise the TLD would be duplicated. Empty when the
-// environment has no dot.li-style gateway (e.g. previewnet).
+// already carry their own domain (for example `paseo.li`), so the view URL is
+// `${label}.${gateway}`. Callers pass the resolved bare label; a fully-qualified
+// name would duplicate the TLD.
 export function dotliViewUrls(label: string): string[] {
   const gateways = getActiveDotnsEnvironment().dotliGateways ?? [];
   return gateways.map((gateway) => `https://${label}.${gateway}`);
@@ -66,6 +65,7 @@ export const DEFAULT_AUTHORIZATION_BYTES = BigInt(104857600);
 export const DEFAULT_VERIFICATION_GATEWAY = PASEO_IPFS_GATEWAY_URL;
 
 export const DEFAULT_NATIVE_TOKEN_DECIMALS = 10;
+export const DEFAULT_NATIVE_TOKEN_SYMBOL = "DOT";
 export const EVM_TOKEN_DECIMALS = 18;
 
 export const DEFAULT_MNEMONIC =
@@ -106,8 +106,8 @@ export const DOTNS_POP_RESOLVER_ABI = DotnsPopResolver as Abi;
 export const DOTNS_NAME_ESCROW_ABI = DotnsNameEscrow as Abi;
 export const POP_RULES_ABI = PopRules as Abi;
 export const STORE_FACTORY_ABI = StoreFactory as Abi;
-export const LABEL_STORE_ABI = LabelStore.abi as Abi;
-export const USER_STORE_ABI = UserStore.abi as Abi;
+export const LABEL_STORE_ABI = LabelStore as Abi;
+export const USER_STORE_ABI = UserStore as Abi;
 export const DOTNS_POP_CONTROLLER_ABI = DotnsPopController as Abi;
 export const DOTNS_NAME_WHITELIST_ABI = DotnsNameWhitelist as Abi;
 export const PERSONHOOD_ABI = [
@@ -171,7 +171,7 @@ const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet", "devnet"] as const;
 export type DotnsEnvironmentId = (typeof DOTNS_ENVIRONMENT_IDS)[number];
 
 export type DotnsContractAddresses = {
-  /** DotNS domain registrar - handles ownership NFTs */
+  /** dotNS domain registrar - handles ownership NFTs */
   DOTNS_REGISTRAR: Address;
 
   /** Registration controller - manages commit-reveal registration */
@@ -186,7 +186,7 @@ export type DotnsContractAddresses = {
   /** Reverse resolution resolver - maps an address to its primary name */
   DOTNS_REVERSE_RESOLVER: Address;
 
-  /** PoP resolver - holds per-node chat keys set at PoP-Full registration */
+  /** PoP resolver - holds the chat keys and device-to-personhood name links the gateway pallet sets when it issues a name */
   DOTNS_POP_RESOLVER: Address;
 
   /** Content hash resolver - stores IPFS CIDs */
@@ -195,13 +195,13 @@ export type DotnsContractAddresses = {
   /** User store factory - deploys per-user storage contracts */
   STORE_FACTORY: Address;
 
-  /** Proof of Personhood RULES - verifies eligibility and pricing */
+  /** PopRules - classifies names into status tiers, prices them, and holds base-name reservations */
   DOTNS_RULES: Address;
 
-  /** Proof of Personhood controller - claims LabelStore and settles deferred labels */
+  /** PoP controller - issues device names and personhood names for the dotNS gateway pallet, and settles names deferred until their owner has a LabelStore */
   DOTNS_POP_CONTROLLER: Address;
 
-  /** Name escrow - holds NoStatus deposits and the refund-on-leave ledger */
+  /** Name escrow - holds refundable registration deposits and protocol fees, and runs the release and refund ledgers */
   DOTNS_NAME_ESCROW: Address;
 
   /** Multicall3 - batch read contract calls */
@@ -220,9 +220,9 @@ export type DotnsEnvironmentConfig = {
   rpc: string | null;
   blockExplorerUrl: string;
   /**
-   * Base URL of the dotns web app's CID preview route, e.g.
+   * Base URL of the dotNS web app's CID preview route, e.g.
    * `https://dotns.paseo.li/#/preview`. `null` for environments with no web app;
-   * preview-link helpers throw a clear error rather than emit a wrong-network link.
+   * preview-link helpers throw a clear error so no wrong-network link is emitted.
    */
   previewBaseUrl: string | null;
   /**
@@ -232,6 +232,19 @@ export type DotnsEnvironmentConfig = {
    * environments served only via a non-dot.li gateway (e.g. previewnet).
    */
   dotliGateways: readonly string[];
+  /**
+   * Genesis hash of the Asset Hub chain this environment's addresses belong
+   * to. Checked after connect so a stray `--rpc`/`DOTNS_RPC` cannot silently
+   * point the address book at a different chain. `null` skips the check.
+   */
+  genesisHash: `0x${string}` | null;
+
+  /**
+   * Genesis hash of this environment's bulletin chain, checked the same way
+   * on bulletin connections. `null` skips the check.
+   */
+  bulletinGenesisHash: `0x${string}` | null;
+
   /**
    * Contract address book. `null` when contracts have not been deployed to (or
    * recorded for) this environment; createDotnsContext throws in that case.
@@ -244,8 +257,8 @@ export type DotnsEnvironmentConfig = {
   bulletinRpc: string | null;
   /**
    * IPFS HTTP gateway base URL (with or without trailing `/ipfs`). `null` for
-   * environments where no gateway is operated; verification calls throw rather
-   * than silently swapping to the Paseo gateway.
+   * environments where no gateway is operated; verification calls throw and never
+   * fall back to the Paseo gateway.
    */
   ipfsGatewayUrl: string | null;
   /**
@@ -255,8 +268,9 @@ export type DotnsEnvironmentConfig = {
   bulletinP2pPeers: readonly string[];
 };
 
-// CREATE3 address book from the canonical dotns deployment (dotns repo,
-// deployments/paseo-assethub/420420417.json). Every contract is deployed through
+// CREATE3 address book matching the canonical fresh-deploy set (dotns repo,
+// deployments/expected.json; the protocol registry on each chain is the runtime
+// authority). Every contract is deployed through
 // the shared CREATE3 factory with a chain-independent salt, so these addresses
 // are identical on every chain that reuses that factory. paseo-v2 and previewnet
 // are distinct chains with distinct genesis hashes, but both host the factory at
@@ -272,7 +286,7 @@ const PASEO_CREATE3_CONTRACTS: DotnsContractAddresses = {
   DOTNS_REVERSE_RESOLVER: "0xee3883d7eB60Ee9BCD7F3bcD8f2f05302A9Cc035" as Address,
   DOTNS_POP_RESOLVER: "0xDaC984884EcA8Fc44011f1D6C49B27828390A72B" as Address,
   DOTNS_CONTENT_RESOLVER: "0x7F74D7CD50f5a834270E2ad395a01b01891AB37d" as Address,
-  STORE_FACTORY: "0x709A027F446a9e2a4BB9cb9a9c754435b19e32B7" as Address,
+  STORE_FACTORY: "0x99605a926FcB40aB520F659c6505E5ff862771f6" as Address,
   DOTNS_RULES: "0x747B456bE03aec0b42bd85C51513730FBD45DA31" as Address,
   DOTNS_POP_CONTROLLER: "0xCC932348606cc1f3318cADeC5A5Cd2CA447f8a4b" as Address,
   DOTNS_NAME_ESCROW: "0x4881Afb78e7C908cAe818168B926229D93376520" as Address,
@@ -285,6 +299,8 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     label: "Paseo V2",
     aliases: ["paseo-v2", "paseo_v2", "v2", "next", "next-v2"],
     rpc: RPC_ENDPOINTS[0],
+    genesisHash: "0x4349b00e54897e21196fd331015fc5be0f14e118beb0375ed2bb1793737bb57a",
+    bulletinGenesisHash: "0x8cfe6717dc4becfda2e13c488a1e2061ff2dfee96e7d031157f72d36716c0a22",
     blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
     previewBaseUrl: "https://dotns.paseo.li/#/preview",
     dotliGateways: ["paseo.li"],
@@ -298,9 +314,12 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     label: "Paseo Asset Hub Previewnet",
     aliases: ["previewnet", "preview-net", "preview", "ppn"],
     rpc: PREVIEWNET_ASSET_HUB_URL,
+    // Previewnet relaunches from fresh genesis on resets; update on relaunch.
+    genesisHash: "0xbac97e23fc8f4bccae72a98f8aeb2bcab20bf755862304e4b46ad6473456e896",
+    bulletinGenesisHash: "0xa081192b90c1f6a3f8e9ce7b2a8246f41af805c66456c84e05fd97c2b3502425",
     blockExplorerUrl: "https://blockscout-testnet.polkadot.io",
     previewBaseUrl: null,
-    // previewnet is served via its own substrate.dev gateway, not a dot.li domain.
+    // Served through its own substrate.dev gateway.
     dotliGateways: [],
     contracts: PASEO_CREATE3_CONTRACTS,
     bulletinRpc: "wss://previewnet.substrate.dev/bulletin",
@@ -312,9 +331,11 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     label: "Products Devnet (Paseo Asset Hub)",
     aliases: ["devnet", "dev", "products-devnet"],
     rpc: DEVNET_ASSET_HUB_URL,
+    genesisHash: "0xd6eec26135305a8ad257a20d003357284c8aa03d0bdb2b357ab0a22371e11ef2",
+    bulletinGenesisHash: "0xe101f0fa4627d29a257645e02be86d80378fea1a2bf8fa6a918d150ebc760a59",
     // No public block explorer wired for this deployment yet.
     blockExplorerUrl: "",
-    // No devnet-hosted dotns web app; preview-link helpers stay disabled.
+    // No devnet-hosted dotNS web app; preview-link helpers stay disabled.
     previewBaseUrl: null,
     dotliGateways: ["dev-dot.li"],
     contracts: {
@@ -358,7 +379,7 @@ export function resolveDotnsEnvironmentId(value?: string): DotnsEnvironmentId {
   }
 
   throw new Error(
-    `Unknown DotNS environment "${value}". Use one of: ${DOTNS_ENVIRONMENT_IDS.join(", ")}`,
+    `Unknown dotNS environment "${value}". Use one of: ${DOTNS_ENVIRONMENT_IDS.join(", ")}`,
   );
 }
 

@@ -11,11 +11,12 @@ test("escrow help shows the subcommand description and subcommands", async () =>
   const result = await runDotnsCli(["escrow", "--help"]);
   expect(result.exitCode).toBe(HARNESS_HELP_SUCCESS_EXIT_CODE);
 
-  expect(result.combinedOutput).toContain("Manage NoStatus deposits");
+  expect(result.combinedOutput).toContain("Manage name deposits");
   expect(result.combinedOutput).toContain("status");
   expect(result.combinedOutput).toContain("balance");
   expect(result.combinedOutput).toContain("positions");
   expect(result.combinedOutput).toContain("release");
+  expect(result.combinedOutput).toContain("redeem");
   expect(result.combinedOutput).toContain("withdraw");
   expect(result.combinedOutput).toContain("claim-withdrawal");
   expect(result.combinedOutput).toContain("refunds");
@@ -54,6 +55,15 @@ test("escrow release help describes the approve-and-release sequence", async () 
   expect(result.combinedOutput).toContain("--json");
 });
 
+test("escrow redeem help describes taking a released name back", async () => {
+  const result = await runDotnsCli(["escrow", "redeem", "--help"]);
+  expect(result.exitCode).toBe(HARNESS_HELP_SUCCESS_EXIT_CODE);
+
+  expect(result.combinedOutput).toContain("released name back");
+  expect(result.combinedOutput).toContain("redeem window");
+  expect(result.combinedOutput).toContain("--json");
+});
+
 test("escrow withdraw help describes the post-cooldown step", async () => {
   const result = await runDotnsCli(["escrow", "withdraw", "--help"]);
   expect(result.exitCode).toBe(HARNESS_HELP_SUCCESS_EXIT_CODE);
@@ -66,7 +76,7 @@ test("escrow claim-withdrawal help describes the overpayment ledger", async () =
   const result = await runDotnsCli(["escrow", "claim-withdrawal", "--help"]);
   expect(result.exitCode).toBe(HARNESS_HELP_SUCCESS_EXIT_CODE);
 
-  expect(result.combinedOutput).toContain("Drain the pull-payment ledger");
+  expect(result.combinedOutput).toContain("Drain the pull-payment balance");
   expect(result.combinedOutput).toContain("overpayment");
 });
 

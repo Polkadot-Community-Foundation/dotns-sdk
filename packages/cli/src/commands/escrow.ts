@@ -1,20 +1,22 @@
 import { type Address } from "viem";
-import { type DotnsContext, read, write } from "../core/context";
+import { type DotnsContext, read, write, ownEvmAddress } from "../core/context";
 import { DOTNS_NAME_ESCROW_ABI, DOTNS_REGISTRAR_ABI } from "../utils/constants";
-import { computeDomainTokenId, formatDomainName, normaliseName } from "../core/naming";
+import { computeDomainTokenId, normaliseName } from "../core/naming";
 import { isSameEvmAddress } from "../utils/address";
+import { inspectName, type ReleasePosition } from "./inspectName";
+import { nowSeconds } from "../utils/formatting";
+import { isRefundableDeposit } from "./escrowStatus";
+import {
+  assertIsOwner,
+  assertIsToken,
+  assertNotSoulbound,
+  assertRedeemable,
+  assertRegistered,
+  assertReleasable,
+} from "./preflight";
 
-/// On-chain release position for a token.
-export type EscrowPositionView = {
-  domain: string;
-  tokenId: bigint;
-  recipient: Address;
-  asset: Address;
-  amount: bigint;
-  withdrawAvailableAt: bigint;
-  released: boolean;
-  claimed: boolean;
-};
+/// A release position with the name it belongs to.
+export type EscrowPositionView = ReleasePosition & { domain: string; tokenId: bigint };
 
 export type RefundEntryView = {
   entryId: bigint;
@@ -34,15 +36,6 @@ export type RefundsListResult = {
   entries: RefundEntryView[];
 };
 
-type RawReleasePosition = {
-  recipient: Address;
-  asset: Address;
-  amount: bigint;
-  withdrawAvailableAt: bigint;
-  released: boolean;
-  claimed: boolean;
-};
-
 type RawRefundEntry = {
   recipient: Address;
   amount: bigint;
@@ -50,38 +43,14 @@ type RawRefundEntry = {
   tokenId: bigint;
 };
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
-
 /// Reads one release position by name. Returns null when the slot is empty.
 async function readPositionForName(
   ctx: DotnsContext,
   name: string,
 ): Promise<EscrowPositionView | null> {
-  const label = await normaliseName(ctx, name);
-  const tokenId = await computeDomainTokenId(ctx, label);
-
-  const raw = await read<RawReleasePosition>(
-    ctx,
-    ctx.contracts.DOTNS_NAME_ESCROW,
-    DOTNS_NAME_ESCROW_ABI,
-    "getReleasePosition",
-    [tokenId],
-  );
-
-  if (raw.recipient === ZERO_ADDRESS && raw.amount === 0n && !raw.released) {
-    return null;
-  }
-
-  return {
-    domain: await formatDomainName(ctx, label),
-    tokenId,
-    recipient: raw.recipient,
-    asset: raw.asset,
-    amount: raw.amount,
-    withdrawAvailableAt: raw.withdrawAvailableAt,
-    released: raw.released,
-    claimed: raw.claimed,
-  };
+  const { domain, tokenId, position } = await inspectName(ctx, name);
+  if (position === null) return null;
+  return { domain, tokenId, ...position };
 }
 
 /// Reads the current release position for a name. Returns null when the slot is empty.
@@ -114,44 +83,6 @@ export async function listEscrowPositions(
   return positions;
 }
 
-/// A position is the user's escrow deposit only while it holds a refundable amount. Zero-amount
-/// entries are PopFull/PopLite lifecycle markers or already-withdrawn slots, not staked deposits.
-export function isRefundableDeposit(position: { amount: bigint }): boolean {
-  return position.amount > 0n;
-}
-
-/// Total still locked across positions. Withdrawn positions carry amount 0 (the contract
-/// zeroes it on withdraw), so they fall out of the sum naturally.
-export function totalEscrowAmount(positions: readonly { amount: bigint }[]): bigint {
-  return positions.reduce((sum, position) => sum + position.amount, 0n);
-}
-
-/// Seconds left on a released position's cooldown before it becomes withdrawable.
-export function cooldownRemainingSeconds(
-  position: Pick<EscrowPositionView, "withdrawAvailableAt">,
-  nowSeconds: bigint,
-): bigint {
-  const remaining = position.withdrawAvailableAt - nowSeconds;
-  return remaining > 0n ? remaining : 0n;
-}
-
-export function formatCooldown(seconds: bigint): string {
-  if (seconds <= 0n) return "0s";
-  const total = Number(seconds);
-  const minutes = Math.floor(total / 60);
-  const rest = total % 60;
-  return minutes > 0 ? `${minutes}m ${rest}s` : `${rest}s`;
-}
-
-/// Plain status text for a position, embedding the live cooldown countdown while a
-/// released name waits out its cooldown.
-export function formatPositionStatus(position: EscrowPositionView, nowSeconds: bigint): string {
-  if (position.claimed) return "claimed";
-  if (!position.released) return "held";
-  const remaining = cooldownRemainingSeconds(position, nowSeconds);
-  return remaining > 0n ? `cooldown ${formatCooldown(remaining)}` : "claimable";
-}
-
 /// Reads the caller's pull-payment ledger balance (withdrawn deposits plus
 /// registration-overpayment refunds). This is what `claimWithdrawal` drains and is
 /// independent of any open release position.
@@ -165,12 +96,19 @@ export async function getPendingWithdrawal(ctx: DotnsContext, recipient: Address
   );
 }
 
-/// Approves the escrow on the registrar then calls `release`. The caller must own the NFT.
-export async function releaseName(
-  ctx: DotnsContext,
-  label: string,
-): Promise<{ approveTxHash: string; releaseTxHash: string; tokenId: bigint }> {
-  const tokenId = await computeDomainTokenId(ctx, await normaliseName(ctx, label));
+export type ReleaseResult = { approveTxHash: string; releaseTxHash: string; tokenId: bigint };
+
+/// Approves the escrow on the registrar then calls `release`. The preflight checks run before
+/// the approve so a name the escrow would reject never leaves a dangling approval behind.
+export async function releaseName(ctx: DotnsContext, name: string): Promise<ReleaseResult> {
+  const inspection = await inspectName(ctx, name);
+  assertRegistered(inspection, "release");
+  assertIsToken(inspection, "release");
+  assertNotSoulbound(inspection, "release");
+  const signer = await ownEvmAddress(ctx);
+  assertIsOwner(inspection, signer, "release");
+  assertReleasable(inspection, signer, nowSeconds());
+  const { tokenId } = inspection;
 
   const approveTxHash = await write(
     ctx,
@@ -195,6 +133,26 @@ export async function releaseName(
   return { approveTxHash, releaseTxHash, tokenId };
 }
 
+export type RedeemResult = { domain: string; tokenId: bigint; txHash: string };
+
+/// Returns a released name to its previous holder while the redeem window is open.
+export async function redeemName(ctx: DotnsContext, name: string): Promise<RedeemResult> {
+  const inspection = await inspectName(ctx, name);
+  assertRedeemable(inspection, await ownEvmAddress(ctx), nowSeconds());
+  const { domain, tokenId } = inspection;
+
+  const txHash = await write(
+    ctx,
+    ctx.contracts.DOTNS_NAME_ESCROW,
+    0n,
+    DOTNS_NAME_ESCROW_ABI,
+    "redeem",
+    [tokenId],
+    "Redeem",
+  );
+  return { domain, tokenId, txHash };
+}
+
 /// Calls `withdraw` to credit the original depositor's pull-payment balance. Reverts before
 /// the per-position cooldown elapses.
 export async function withdrawName(ctx: DotnsContext, label: string): Promise<string> {
@@ -210,8 +168,9 @@ export async function withdrawName(ctx: DotnsContext, label: string): Promise<st
   );
 }
 
-/// Drains the legacy pull-payment ledger that holds registration-overpayment fallbacks. The
-/// caller receives the amount accumulated against their address.
+/// Drains the caller's pull-payment balance: deposits settled by `withdraw` or `reclaim`, plus
+/// registration overpayments the controller could not refund directly. The caller receives
+/// the amount accumulated against their address.
 export async function claimWithdrawal(ctx: DotnsContext): Promise<string> {
   return write(
     ctx,

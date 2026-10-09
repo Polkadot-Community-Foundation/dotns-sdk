@@ -35,7 +35,7 @@ export function isRevertFlag(flags: bigint): boolean {
 
 /**
  * A revert carrying revert data: the contract ran and rejected the call, so the
- * failure is an answer rather than a failure to reach the chain.
+ * failure is an answer from the chain.
  *
  * Deliberately not raised for the empty-data revert, whose causes are an unmapped
  * origin, a stale-ABI selector mismatch, or exhausted weight
@@ -62,7 +62,7 @@ export function buildRevertError(data: Hex, abi: Abi): Error {
       ? `${decoded.errorName}(${decoded.args.map(String).join(", ")})`
       : decoded.errorName;
   } catch {
-    // Unknown error selector — fall back to raw hex
+    // Unknown error selector: fall back to raw hex
   }
   return new ContractRevertError(revertReason);
 }
@@ -191,20 +191,12 @@ function namehashUnder(parent: Hex, label: string): Hex {
 }
 
 // EIP-137 namehash of a bare name (TLD already stripped) under `tldNode`: labels
-// fold right to left, as in `DotnsRegistry._parentNamehash`. Since dotns v0.7.0
-// this also covers a lite personhood name: `joseph.42` is `joseph` beneath the
-// container `42` (`SubnodeUtils.liteSubnodeOf`), which is exactly this fold.
+// fold right to left, as in `DotnsRegistry._parentNamehash`. This also covers a
+// device name: `joseph.42` is `joseph` beneath the
+// container `42` (`SubnodeUtils.deviceSubnodeOf`), which is exactly this fold.
 // `tldNode` is read from the protocol registry; each deployment has its own TLD.
 export function deriveDomainNode(tldNode: Hex, name: string): Hex {
   return name.split(".").reduceRight<Hex>((parent, label) => namehashUnder(parent, label), tldNode);
-}
-
-// Pre-v0.7.0 deployments minted a lite name as ONE label — the whole dotted
-// string hashed flat under the TLD. Names minted before an in-place upgrade
-// keep living at this node, so readers fall back to it when the folded node
-// has no record (see `domainNode` in core/naming.ts).
-export function deriveLegacyLiteNode(tldNode: Hex, liteLabel: string): Hex {
-  return namehashUnder(tldNode, liteLabel);
 }
 
 // The minted ERC721 tokenId is `uint256(node)`; only second-level names are tokenised.

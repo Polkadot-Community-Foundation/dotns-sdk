@@ -5,7 +5,11 @@ import type { KeyringPair } from "@polkadot/keyring/types";
 import { createClient } from "polkadot-api";
 import { getWsProvider } from "polkadot-api/ws-provider/node";
 import { paseo } from "@polkadot-api/descriptors";
-import { ReviveClientWrapper, type PolkadotApiClient } from "../../client/polkadotClient";
+import {
+  getChainTokenInfo,
+  ReviveClientWrapper,
+  type PolkadotApiClient,
+} from "../../client/polkadotClient";
 import { performDomainLookup, performOwnerOfLookup } from "../../commands/lookup";
 import { verifyDomainOwnership } from "../../commands/register";
 import { resolveDotnsEnvironment, resolveRpc } from "../env";
@@ -19,10 +23,10 @@ import {
 import { addAuthOptions, getAuthOptions } from "./authOptions";
 import { step, printCommandHeader } from "../ui";
 import {
-  getChainTokenInfo,
   prepareAssetHubContext,
   buildDotnsContext,
   buildReadOnlyDotnsContext,
+  assertExpectedChain,
 } from "../context";
 import { makeOnStatus } from "../txStatus";
 import { resolveTransferRecipient, transferName } from "../transfer";
@@ -44,7 +48,7 @@ function renderDomainLookup(
   result: DomainLookupResult,
   nativeTokenSymbol: string,
 ): void {
-  console.log("\n▶ DotNS Domain Lookup");
+  console.log("\n▶ dotNS Domain Lookup");
   console.log(chalk.gray("  domain: ") + chalk.cyan(result.domain));
   console.log(chalk.gray("  node:   ") + chalk.white(result.node));
   console.log();
@@ -123,10 +127,11 @@ function renderBaseNameReservation(
 
 async function createReadOnlyChainContext(rpc: string) {
   const rawClient = createClient(getWsProvider(rpc));
+  await assertExpectedChain(rawClient);
   const client = rawClient.getTypedApi(paseo);
   const tokenInfo = await getChainTokenInfo(rawClient);
   return {
-    clientWrapper: new ReviveClientWrapper(client as PolkadotApiClient),
+    clientWrapper: new ReviveClientWrapper(client as PolkadotApiClient, tokenInfo),
     ...tokenInfo,
   };
 }
