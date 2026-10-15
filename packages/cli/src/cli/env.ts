@@ -1,7 +1,12 @@
 import os from "node:os";
 import path from "node:path";
 
-import { setActiveDotnsEnvironment, type DotnsEnvironmentConfig } from "../utils/constants";
+import {
+  getActiveDotnsEnvironment,
+  setActiveDotnsEnvironment,
+  type DotnsEnvironmentConfig,
+  type DotnsEnvironmentId,
+} from "../utils/constants";
 
 export const ENV = {
   DOTNS_ENV: "DOTNS_ENV",
@@ -9,6 +14,7 @@ export const ENV = {
   BULLETIN_RPC: "DOTNS_BULLETIN_RPC",
   MNEMONIC: "DOTNS_MNEMONIC",
   SKIP_CHAIN_CHECK: "DOTNS_SKIP_CHAIN_CHECK",
+  SKIP_VERSION_CHECK: "DOTNS_SKIP_VERSION_CHECK",
   KEY_URI: "DOTNS_KEY_URI",
   // Keystore directory (per-account files live here)
   // Example: ~/.dotns/keystore/
@@ -34,13 +40,20 @@ export const DEFAULT_QR_APP_ID = "dotns";
 // the wallet must share one, or the wallet's response never reaches the CLI and pairing
 // hangs. A raw comma-separated wss list overrides the named stages.
 const QR_PEOPLE_STAGES = {
+  polkadot: ["wss://polkadot-people-rpc.polkadot.io"],
   paseo: ["wss://paseo-people-next-system-rpc.polkadot.io"],
   preview: ["wss://previewnet.substrate.dev/people"],
   stable: ["wss://pop3-testnet.parity-lab.parity.io/people"],
 } as const;
 
 export type QrPeopleStage = keyof typeof QR_PEOPLE_STAGES;
-export const DEFAULT_QR_PEOPLE_STAGE: QrPeopleStage = "paseo";
+
+// Without a flag or env var, pairing uses the relay of the network the command signs on.
+const ENVIRONMENT_QR_PEOPLE_STAGES: Record<DotnsEnvironmentId, QrPeopleStage> = {
+  polkadot: "polkadot",
+  "paseo-v2": "paseo",
+  previewnet: "preview",
+};
 
 export function resolveSignerKind(maybeKind?: string): SignerKind {
   const value = (maybeKind || process.env[ENV.SIGNER] || "keystore").toLowerCase();
@@ -55,7 +68,7 @@ export function resolveQrPeopleEndpoints(maybeStageOrUrls?: string): string[] {
   const value = (
     maybeStageOrUrls ||
     process.env[ENV.QR_PEOPLE_RPC] ||
-    DEFAULT_QR_PEOPLE_STAGE
+    ENVIRONMENT_QR_PEOPLE_STAGES[getActiveDotnsEnvironment().id]
   ).trim();
   if (value in QR_PEOPLE_STAGES) {
     return [...QR_PEOPLE_STAGES[value as QrPeopleStage]];
@@ -66,7 +79,7 @@ export function resolveQrPeopleEndpoints(maybeStageOrUrls?: string): string[] {
     .filter(Boolean);
   if (urls.length === 0) {
     throw new Error(
-      `No QR pairing relay resolved from "${value}". Use a stage (paseo|preview|stable) or wss URLs.`,
+      `No QR pairing relay resolved from "${value}". Use a stage (polkadot|paseo|preview|stable) or wss URLs.`,
     );
   }
   for (const url of urls) {

@@ -50,18 +50,18 @@ import {
   loadManifestForResume,
 } from "../../bulletin/uploadManifest";
 import { verifyCidWithMultipleGateways, verifyCidViaP2P } from "../../bulletin/ipfs";
-function cleanupHeliaAndExit(code: number): never {
-  import("../../bulletin/heliaClient")
+// Awaited by the caller: the CLI exits 0 as soon as the action resolves, so an
+// exit scheduled after it would lose the code.
+async function cleanupHeliaAndExit(code: number): Promise<never> {
+  const cleanup = import("../../bulletin/heliaClient")
     .then(({ destroySharedHeliaClient }) => destroySharedHeliaClient())
-    .catch(() => {})
-    .finally(() => process.exit(code));
-
-  setTimeout(() => process.exit(code), 500);
-  return undefined as never;
+    .catch(() => {});
+  await Promise.race([cleanup, new Promise((resolve) => setTimeout(resolve, 500))]);
+  process.exit(code);
 }
 import { normalizeUploadMaxRetries } from "../../bulletin/uploadRetry";
 import { addAuthOptions } from "./authOptions";
-import { assertExpectedChain, prepareContext } from "../context";
+import { assertExpectedChain, assertSupportedProtocolVersion, prepareContext } from "../context";
 import { ENV, resolveBulletinRpc, resolveDotnsEnvironment, resolveRpc } from "../env";
 import {
   DEFAULT_CHUNK_SIZE_BYTES,
@@ -69,6 +69,7 @@ import {
   DEFAULT_BULLETIN_AUTHORIZER_KEY_URI,
   DEFAULT_AUTHORIZATION_TRANSACTIONS,
   DEFAULT_AUTHORIZATION_BYTES,
+  getActiveDotnsEnvironment,
 } from "../../utils/constants";
 import { getJsonFlag, getMergedOptions, withCapturedConsole } from "./jsonHelpers";
 import { clampChunkSizeBytes } from "../../bulletin/store";
@@ -286,14 +287,28 @@ function writeBulletinJsonError(error: unknown): never {
   process.exit(1);
 }
 
+// The Authorizer signer for authorize and refresh. An explicit -k / --key-uri always
+// wins; the dev default applies only on a Bulletin testnet, where it is seeded as an
+// Authorizer.
+async function resolveAuthorizerKeyUri(keyUri: unknown, bulletinRpc: string): Promise<string> {
+  if (keyUri !== undefined && keyUri !== null) return String(keyUri);
+  if (!(await detectBulletinTestnet(bulletinRpc))) {
+    throw new Error(
+      `Refusing to default the Authorizer signer to ${DEFAULT_BULLETIN_AUTHORIZER_KEY_URI} on this chain (${bulletinRpc}).\n` +
+        `Pass an explicit signer with -k / --key-uri (the account must hold Authorizer privileges on Bulletin).`,
+    );
+  }
+  return DEFAULT_BULLETIN_AUTHORIZER_KEY_URI;
+}
+
 /**
  * Warn when the dev-default authorizer signer is used against an environment
  * where the bulletin Authorizer is almost certainly *not* the default
- * (previewnet). Silent on every other environment (paseo-v2, devnet) and on explicit overrides.
+ * (previewnet, polkadot). Silent on paseo-v2 and on explicit overrides.
  */
 export function warnIfDevKeyOnTestnet(signerKeyUri: string, environmentId: string): void {
   if (signerKeyUri !== DEFAULT_BULLETIN_AUTHORIZER_KEY_URI) return;
-  if (environmentId !== "previewnet") return;
+  if (environmentId === "paseo-v2") return;
   console.warn(
     chalk.yellow(
       `\n⚠ Using default signer ${DEFAULT_BULLETIN_AUTHORIZER_KEY_URI} against ${environmentId}.\n` +
@@ -474,23 +489,7 @@ export function attachBulletinCommands(root: Command): void {
         );
         const bytes = BigInt(mergedOptions.bytes || DEFAULT_AUTHORIZATION_BYTES);
         const force = Boolean(options.force);
-        const explicitKeyUri =
-          mergedOptions.keyUri === undefined || mergedOptions.keyUri === null
-            ? undefined
-            : String(mergedOptions.keyUri);
-        let signerKeyUri: string;
-        if (explicitKeyUri !== undefined) {
-          signerKeyUri = explicitKeyUri;
-        } else {
-          const isTestnet = await detectBulletinTestnet(bulletinRpc);
-          if (!isTestnet) {
-            throw new Error(
-              `Refusing to default the Authorizer signer to ${DEFAULT_BULLETIN_AUTHORIZER_KEY_URI} on this chain (${bulletinRpc}).\n` +
-                `Pass an explicit signer with -k / --key-uri (the account must hold Authorizer privileges on Bulletin).`,
-            );
-          }
-          signerKeyUri = DEFAULT_BULLETIN_AUTHORIZER_KEY_URI;
-        }
+        const signerKeyUri = await resolveAuthorizerKeyUri(mergedOptions.keyUri, bulletinRpc);
 
         const environment = resolveDotnsEnvironment(mergedOptions.env ?? mergedOptions.network);
         if (!jsonOutput) warnIfDevKeyOnTestnet(signerKeyUri, environment.id);
@@ -606,7 +605,7 @@ export function attachBulletinCommands(root: Command): void {
           mergedOptions.bulletinRpc,
           mergedOptions.env ?? mergedOptions.network,
         );
-        const signerKeyUri = String(mergedOptions.keyUri || DEFAULT_BULLETIN_AUTHORIZER_KEY_URI);
+        const signerKeyUri = await resolveAuthorizerKeyUri(mergedOptions.keyUri, bulletinRpc);
         const reporterMode = resolveReporterMode(mergedOptions.reporter as BulletinReporterMode);
 
         const environment = resolveDotnsEnvironment(mergedOptions.env ?? mergedOptions.network);
@@ -647,14 +646,14 @@ export function attachBulletinCommands(root: Command): void {
             rpc: bulletinRpc,
             txHash: result.txHash,
             blockHash: result.blockHash,
-            expiresAt: expirationToISOString(status.expiration, status.currentBlock),
+            expiresAt: expirationToISOString(status.currentBlock, status.expiration),
           });
         } else {
           console.log(chalk.green("\n✓ Authorization refreshed"));
           if (status.expiration !== undefined && status.currentBlock !== undefined) {
             console.log(
               chalk.gray(
-                `  New expiration: ${formatExpirationDisplay(status.expiration, status.currentBlock)}`,
+                `  New expiration: ${formatExpirationDisplay(status.currentBlock, status.expiration)}`,
               ),
             );
           }
@@ -945,7 +944,13 @@ export function attachBulletinCommands(root: Command): void {
           // P2P verification failed; gateway fallback runs below.
         }
 
-        if (!verified) {
+        if (!verified && !getActiveDotnsEnvironment().ipfsGatewayUrl) {
+          onPhase({
+            phase: "verify",
+            state: "warning",
+            message: "P2P unavailable and no IPFS gateway for this environment; not verified",
+          });
+        } else if (!verified) {
           onPhase({
             phase: "verify",
             state: "update",
@@ -1052,6 +1057,12 @@ export function attachBulletinCommands(root: Command): void {
             const tokenInfo = await getChainTokenInfo(cacheClient);
             assetHubTokenSymbol = tokenInfo.nativeTokenSymbol;
             const clientWrapper = new ReviveClientWrapper(typedApi as any, tokenInfo);
+            const environmentId = getActiveDotnsEnvironment().id;
+            await assertSupportedProtocolVersion(
+              clientWrapper,
+              context.substrateAddress,
+              environmentId,
+            );
             const evmAddress = await clientWrapper.getEvmAddress(context.substrateAddress);
 
             await cacheCidToStore({
@@ -1060,6 +1071,7 @@ export function attachBulletinCommands(root: Command): void {
               signer: context.signer,
               substrateAddress: context.substrateAddress,
               evmAddress,
+              environment: environmentId,
             });
             onPhase({ phase: "cache", state: "success", message: "CID cached to Store" });
           } catch (cacheError) {
@@ -1217,8 +1229,11 @@ export function attachBulletinCommands(root: Command): void {
       .option("--json", "Write machine-readable JSON to stdout", false),
   );
 
-  historyCommand.action(async (_options: any, command: any) => {
+  historyCommand.action(async (options: any, command: any) => {
     try {
+      const mergedOptions = getMergedOptions(command, options);
+      // Preview links come from the selected environment.
+      resolveDotnsEnvironment(mergedOptions.env ?? mergedOptions.network);
       const jsonOutput = getJsonFlag(command);
       const history = await readHistory();
 
@@ -1314,6 +1329,8 @@ export function attachBulletinCommands(root: Command): void {
     const p2pTask = reporter.task("Connecting to Bulletin P2P");
 
     try {
+      // P2P peers and the IPFS gateway come from the selected environment.
+      resolveDotnsEnvironment(mergedOptions.env ?? mergedOptions.network);
       if (!jsonOutput) {
         console.log(chalk.blue("\n▶ Verifying CID"));
         console.log(chalk.gray("  cid: ") + chalk.cyan(cid));
@@ -1336,7 +1353,22 @@ export function attachBulletinCommands(root: Command): void {
           console.log();
         }
 
-        cleanupHeliaAndExit(0);
+        return await cleanupHeliaAndExit(0);
+      }
+
+      if (!getActiveDotnsEnvironment().ipfsGatewayUrl) {
+        p2pTask.fail("P2P verification failed, and this environment has no IPFS gateway");
+        if (jsonOutput) {
+          writeBulletinJson({
+            cid,
+            resolvable: false,
+            method: "none",
+            gateways: [
+              { gateway: "p2p/bitswap", resolvable: false, errorMessage: p2pResult.errorMessage },
+            ],
+          });
+        }
+        return await cleanupHeliaAndExit(1);
       }
 
       p2pTask.warn("P2P verification failed, falling back to gateways");
@@ -1367,7 +1399,7 @@ export function attachBulletinCommands(root: Command): void {
           method: resolvableGateways.length > 0 ? "gateway" : "none",
           gateways: entries,
         });
-        cleanupHeliaAndExit(resolvableGateways.length > 0 ? 0 : 1);
+        return await cleanupHeliaAndExit(resolvableGateways.length > 0 ? 0 : 1);
       }
 
       if (resolvableGateways.length > 0) {
@@ -1386,7 +1418,7 @@ export function attachBulletinCommands(root: Command): void {
       }
 
       console.log();
-      cleanupHeliaAndExit(resolvableGateways.length > 0 ? 0 : 1);
+      await cleanupHeliaAndExit(resolvableGateways.length > 0 ? 0 : 1);
     } catch (error) {
       p2pTask.fail("Verification failed");
       const errorMessage = formatErrorMessage(error);
@@ -1394,7 +1426,7 @@ export function attachBulletinCommands(root: Command): void {
         writeBulletinJsonError(errorMessage);
       } else {
         console.error(chalk.red(`\n✗ Error: ${errorMessage}\n`));
-        cleanupHeliaAndExit(1);
+        await cleanupHeliaAndExit(1);
       }
     }
   });

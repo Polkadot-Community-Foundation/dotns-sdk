@@ -17,7 +17,7 @@ This monorepo exists to concentrate shared logic in one place, with explicit bou
 
 ## Status
 
-This is reference and proof-of-concept tooling for the dotNS protocol, intended for reference and experimentation. Unless a specific release states otherwise, it has not received a full security audit; see [SECURITY.md](./SECURITY.md) for the security status and disclosure process. The defaults target Paseo and its Bulletin chain; point the configuration at your own network before relying on it elsewhere.
+This is reference and proof-of-concept tooling for the dotNS protocol, intended for reference and experimentation. Unless a specific release states otherwise, it has not received a full security audit; see [SECURITY.md](./SECURITY.md) for the security status and disclosure process. The defaults target Polkadot Hub and the Polkadot Bulletin chain; select a testnet with `--env`, or point the configuration at your own network before relying on it elsewhere.
 
 ## Scope
 
@@ -50,6 +50,8 @@ Non-goals:
 ## Repository structure
 
 - `packages/*`: TypeScript packages (Bun workspace)
+  - `packages/cli`: the `@parity/dotns-cli` command-line tool and its programmatic SDK (`@parity/dotns-cli/core`). This is what releases publish.
+  - `packages/ui`: a web app. It is not maintained at present, does not work against current deployments, and is neither released nor deployed by CLI releases.
 - `crates/*`: Rust crates (Cargo workspace, optional; not present yet)
 - `shared/*`: cross-language artefacts (ABIs, deployments, schemas; not present yet)
 - `scripts/*`: repo-level scripts (fetch / generate / check)

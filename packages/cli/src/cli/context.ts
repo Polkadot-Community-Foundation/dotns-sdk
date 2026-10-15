@@ -42,6 +42,7 @@ import {
   type DotnsEnvironmentConfig,
 } from "../utils/constants";
 import { createDotnsContext, type DotnsContext, type OperationStatus } from "../core/context";
+import { checkProtocolVersion, UnsupportedProtocolVersionError } from "../core/protocolVersion";
 
 type BuildContextOptions = {
   onStatus?: (status: OperationStatus) => void;
@@ -177,6 +178,41 @@ export async function assertExpectedChain(
         : `Check --env, --rpc and DOTNS_RPC. If the chain was intentionally relaunched,`,
       `set DOTNS_SKIP_CHAIN_CHECK=1 and update the environment's genesis hash.`,
     ].join("\n  "),
+  );
+}
+
+// Refuses a network unless it declares one of the dotNS protocol releases this CLI
+// supports. Runs before every read and before anything is signed, so a refused
+// network never receives a transaction, account mapping included.
+// `DOTNS_SKIP_VERSION_CHECK=1` bypasses it, for a network the CLI cannot vouch for
+// but the user chooses to use anyway. Prints nothing, for callers that report their
+// own phases.
+export async function assertSupportedProtocolVersion(
+  clientWrapper: ReviveClientWrapper,
+  origin: string,
+  environment: string,
+): Promise<void> {
+  if (process.env[ENV.SKIP_VERSION_CHECK] === "1") return;
+  try {
+    await checkProtocolVersion(createDotnsContext({ clientWrapper, origin, environment }));
+  } catch (error) {
+    // The escape hatch is a CLI setting, so the CLI names it.
+    if (error instanceof UnsupportedProtocolVersionError) {
+      error.message += ` Set ${ENV.SKIP_VERSION_CHECK}=1 to use it anyway.`;
+    }
+    throw error;
+  }
+}
+
+// assertSupportedProtocolVersion behind a progress step.
+export async function enforceProtocolVersion(
+  clientWrapper: ReviveClientWrapper,
+  origin: string,
+  environment: string,
+): Promise<void> {
+  if (process.env[ENV.SKIP_VERSION_CHECK] === "1") return;
+  await step("Checking dotNS protocol version", async () =>
+    assertSupportedProtocolVersion(clientWrapper, origin, environment),
   );
 }
 
@@ -342,7 +378,16 @@ function logConfiguration(params: {
   console.log(chalk.gray("  Account:   ") + chalk.white(params.authAccount));
 }
 
-export async function prepareAssetHubContext(options: any): Promise<AssetHubContext> {
+export type AssetHubContextOptions = {
+  // False for commands that only report on the account: they read its mapping
+  // and never submit map_account.
+  mapAccount?: boolean;
+};
+
+export async function prepareAssetHubContext(
+  options: any,
+  { mapAccount = true }: AssetHubContextOptions = {},
+): Promise<AssetHubContext> {
   const environment = resolveDotnsEnvironment(resolveRpcEnvironment(options));
   const rpc = resolveRpc(options.rpc, environment.id);
   const { keystorePath, rawClient, tokenInfo, auth, account, substrateAddress, signer } =
@@ -354,15 +399,19 @@ export async function prepareAssetHubContext(options: any): Promise<AssetHubCont
     clientWrapper.getEvmAddress(substrateAddress),
   );
 
+  await enforceProtocolVersion(clientWrapper, substrateAddress, environment.id);
+
   // Idempotent: submits map_account only when unmapped, so a mapped account incurs no signature.
-  await step("Ensuring account mapped", async () =>
-    clientWrapper.ensureAccountMapped(substrateAddress, signer),
-  );
+  const accountAlreadyMapped = mapAccount
+    ? (await step("Ensuring account mapped", async () =>
+        clientWrapper.ensureAccountMapped(substrateAddress, signer),
+      )) === true
+    : await clientWrapper.checkIfAccountMapped(substrateAddress);
 
   logConfiguration({
     environmentLabel: environment.label,
     rpc,
-    chainLabel: "Polkadot Hub TestNet",
+    chainLabel: environment.id === "polkadot" ? "Polkadot Hub" : "Polkadot Hub TestNet",
     tokenInfo,
     substrateAddress,
     evmAddress,
@@ -386,6 +435,7 @@ export async function prepareAssetHubContext(options: any): Promise<AssetHubCont
     substrateAddress,
     signer,
     evmAddress,
+    accountAlreadyMapped,
     nativeTokenDecimals: tokenInfo.nativeTokenDecimals,
     nativeTokenSymbol: tokenInfo.nativeTokenSymbol,
     client: client as PolkadotApiClient,
