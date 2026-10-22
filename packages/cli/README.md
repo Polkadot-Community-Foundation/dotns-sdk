@@ -159,19 +159,19 @@ Select an environment with either an environment variable or a per-command optio
 # Default: devnet
 dotns lookup name alice
 
-# Use Paseo V2 for this shell
-export DOTNS_ENV=paseo-v2
+# Use Polkadot for this shell
+export DOTNS_ENV=polkadot
 dotns account is-mapped 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
 
 # Or override for a single command
-dotns --env paseo-v2 account grant somelabel 0x1234567890AbcdEF1234567890aBcdef12345678
+dotns --env polkadot lookup name alice
 ```
 
 `--network` is an alias of `--env`, and each environment also accepts aliases (for example `dev` for `devnet`, `mainnet` for `polkadot`). `--rpc` still overrides the endpoint URL, but it does not change the selected dotNS contract addresses. Use `--env`/`DOTNS_ENV` to select the dotNS deployment.
 
 ## Programmatic SDK
 
-The operations the CLI runs are exported from `@parity/dotns-cli/core` as typed functions you can
+The operations the CLI runs are exported from `@polkadot-community-foundation/dotns-cli/core` as typed functions you can
 call from your own TypeScript. You build a context with a chain client, an SS58 origin, and a
 `PolkadotSigner` you supply; every operation takes that context. There is no raw-contract surface:
 addresses come from `DOTNS_ENVIRONMENTS[id].contracts` and the ABI is applied internally, so callers
@@ -191,9 +191,9 @@ import {
   getContentHash,
   resolveTransferRecipient,
   transferName,
-} from "@parity/dotns-cli/core";
+} from "@polkadot-community-foundation/dotns-cli/core";
 
-const client = createClient(getWsProvider("wss://paseo-asset-hub-next-rpc.polkadot.io"));
+const client = createClient(getWsProvider("wss://asset-hub-paseo-rpc.n.dwellir.com"));
 // Token decimals and symbol come from the chain, so deposit caps and amounts match it.
 const clientWrapper = new ReviveClientWrapper(
   client.getTypedApi(paseo),
@@ -203,7 +203,7 @@ const ctx = createDotnsContext({
   clientWrapper,
   origin, // your SS58 address
   signer, // your PolkadotSigner
-  environment: "paseo-v2",
+  environment: "devnet",
 });
 
 await registerName(ctx, "aliceweb3"); // owner defaults to your mapped EVM address
@@ -446,7 +446,7 @@ dotns --password test-password bulletin upload ./dist --profile-upload --account
 dotns --password test-password bulletin upload ./dist --profile-upload --profile-output ./report.json --account default
 
 # Custom RPC
-dotns --password test-password bulletin upload ./image.png --bulletin-rpc wss://paseo-bulletin-next-rpc.polkadot.io --account default
+dotns --password test-password bulletin upload ./image.png --bulletin-rpc wss://bulletin-paseo.tservices.es:8443 --account default
 
 # Skip history
 dotns --password test-password bulletin upload ./image.png --no-history --account default
@@ -480,19 +480,19 @@ Authorise accounts to upload to Bulletin chain. Requires sudo.
 
 ```bash
 # Authorise account
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
 
 # With custom limits
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --transactions 500000 --bytes 549755813888
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --transactions 2000 --bytes 268435456
 
 # Force re-authorisation
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --force
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --force
 
 # JSON output
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --json
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --json
 
 # Custom RPC
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --bulletin-rpc wss://paseo-bulletin-next-rpc.polkadot.io
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --bulletin-rpc wss://bulletin-paseo.tservices.es:8443
 ```
 
 ### Bulletin Refresh
@@ -500,7 +500,7 @@ dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC9
 Extend the expiration of an existing Bulletin authorisation.
 
 ```bash
-dotns --key-uri //Alice bulletin refresh 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
+dotns --key-uri //Eve bulletin refresh 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
 ```
 
 ### Bulletin Verify
