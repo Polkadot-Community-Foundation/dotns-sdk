@@ -34,6 +34,15 @@ test("accepts friendly paseo-v2 aliases", () => {
   expect(resolveDotnsEnvironmentId("next")).toBe("paseo-v2");
 });
 
+test("accepts polkadot aliases and selects its Asset Hub", () => {
+  delete process.env[ENV.RPC];
+  expect(resolveDotnsEnvironmentId("mainnet")).toBe("polkadot");
+  expect(resolveDotnsEnvironmentId(undefined)).toBe("devnet");
+  expect(resolveDotnsEnvironmentId("Polkadot")).toBe("polkadot");
+  expect(resolveRpc(undefined, "polkadot")).toBe("wss://polkadot-asset-hub-rpc.polkadot.io");
+  expect(getActiveDotnsEnvironment().id).toBe("polkadot");
+});
+
 test("DOTNS_ENV selects rpc and contract set", () => {
   process.env[ENV.DOTNS_ENV] = "paseo-v2";
   delete process.env[ENV.RPC];

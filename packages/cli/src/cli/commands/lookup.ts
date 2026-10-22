@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
-import type { KeyringPair } from "@polkadot/keyring/types";
 import { createClient } from "polkadot-api";
 import { getWsProvider } from "polkadot-api/ws-provider/node";
 import { paseo } from "@polkadot-api/descriptors";
@@ -12,13 +11,12 @@ import {
 } from "../../client/polkadotClient";
 import { performDomainLookup, performOwnerOfLookup } from "../../commands/lookup";
 import { verifyDomainOwnership } from "../../commands/register";
-import { resolveDotnsEnvironment, resolveRpc } from "../env";
+import { ENV, resolveDotnsEnvironment, resolveRpc } from "../env";
 import { formatErrorMessage } from "../../utils/formatting";
 import {
   resolveAuthSourceReadOnly,
   resolveAuthSource,
   createAccountFromSource,
-  createSubstrateSigner,
 } from "../../commands/auth";
 import { addAuthOptions, getAuthOptions } from "./authOptions";
 import { step, printCommandHeader } from "../ui";
@@ -27,6 +25,7 @@ import {
   buildDotnsContext,
   buildReadOnlyDotnsContext,
   assertExpectedChain,
+  enforceProtocolVersion,
 } from "../context";
 import { makeOnStatus } from "../txStatus";
 import { resolveTransferRecipient, transferName } from "../transfer";
@@ -40,7 +39,7 @@ import type {
   DomainLookupResult,
 } from "../../types/types";
 import type { DotnsContext } from "../../core/context";
-import { getJsonFlag, maybeQuiet } from "./jsonHelpers";
+import { getJsonFlag, maybeQuiet, writeSecurityWarning } from "./jsonHelpers";
 import { zeroAddress, checksumAddress, type Address } from "viem";
 
 function renderDomainLookup(
@@ -158,8 +157,31 @@ function withReadOnlyPasswordFallback<T extends AuthSource>(opts: T): T {
   return opts;
 }
 
+export type ReadOnlyContextOptions = {
+  // The command reports on the calling account itself, for example its store or its
+  // personhood status, so a dev-account fallback changes the subject of the result.
+  reportsOnCaller?: boolean;
+};
+
+// Reads never sign, so the dev-account fallback stays a warning rather than the
+// refusal the signing path raises. It matters only where the caller is the subject:
+// elsewhere the dev account is just the origin of the read calls. Without an auth flag,
+// reads take the account from the environment and never open the default keystore, so
+// an account set with `dotns auth set` does not apply here.
+function warnReadOnlyDefaultAccount(
+  resolvedFrom: ResolvedReadOnlyAuth["resolvedFrom"],
+  reportsOnCaller: boolean,
+): void {
+  if (resolvedFrom !== "default" || !reportsOnCaller) return;
+  writeSecurityWarning(
+    `⚠  Reporting on the shared public dev account. Reads use ${ENV.MNEMONIC}, ${ENV.KEY_URI} ` +
+      "or an auth flag such as --account, and do not open the default keystore.",
+  );
+}
+
 export async function prepareReadOnlyContext(
   options: AuthSource & { rpc?: string },
+  { reportsOnCaller = false }: ReadOnlyContextOptions = {},
 ): Promise<ReadOnlyContext> {
   const environment = resolveDotnsEnvironment(options.env ?? options.network);
   const rpc = resolveRpc(options.rpc, environment.id);
@@ -189,14 +211,21 @@ export async function prepareReadOnlyContext(
     } as ResolvedReadOnlyAuth;
   });
 
+  warnReadOnlyDefaultAccount(auth.resolvedFrom, reportsOnCaller);
+
   const keypair = await step("Loading keypair", async () =>
     createAccountFromSource(auth.source, auth.isKeyUri),
   );
 
-  await ensureAccountMappedWhenAuthenticated(clientWrapper, keypair, auth.resolvedFrom);
+  await enforceProtocolVersion(clientWrapper, keypair.address, environment.id);
 
+  // Only a read that reports on the caller needs the caller's mapping: the other
+  // reads take the name or address passed in, and the dev account they fall back
+  // to is unmapped on some chains.
   const evmAddress = await step("Resolving EVM address", async () =>
-    clientWrapper.resolveOwnEvmAddress(keypair.address),
+    reportsOnCaller
+      ? clientWrapper.resolveOwnEvmAddress(keypair.address)
+      : clientWrapper.getEvmAddress(keypair.address),
   );
 
   console.log(chalk.gray("\n  RPC:     ") + chalk.white(rpc));
@@ -216,26 +245,6 @@ export async function prepareReadOnlyContext(
     nativeTokenSymbol,
     evmAddress,
   };
-}
-
-async function ensureAccountMappedWhenAuthenticated(
-  clientWrapper: ReviveClientWrapper,
-  keypair: KeyringPair,
-  resolvedFrom: ResolvedReadOnlyAuth["resolvedFrom"],
-): Promise<void> {
-  if (resolvedFrom === "default") return;
-  const signer = createSubstrateSigner(keypair);
-  try {
-    await step("Ensuring account mapped", async () =>
-      clientWrapper.ensureAccountMapped(keypair.address, signer),
-    );
-  } catch (mapError) {
-    console.log(
-      chalk.yellow(
-        `  ⚠ Account mapping skipped: ${mapError instanceof Error ? mapError.message : String(mapError)}`,
-      ),
-    );
-  }
 }
 
 export function attachLookupCommands(root: Command): void {

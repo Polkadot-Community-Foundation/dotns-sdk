@@ -51,6 +51,7 @@ test("falls back to active env's bulletin RPC", () => {
   expect(resolveBulletinRpc(undefined, "paseo-v2")).toBe(
     "wss://paseo-bulletin-next-rpc.polkadot.io",
   );
+  expect(resolveBulletinRpc(undefined, "polkadot")).toBe("wss://bulletin-rpc.polkadot.io");
 });
 
 test("throws when nothing is configured (synthetic case)", () => {

@@ -2,6 +2,11 @@
 
 A command-line tool for registering and managing `.dot` domains on Polkadot.
 
+> **Network:** commands target the products devnet (`--env devnet`) unless you select another
+> environment. Pass `--env polkadot` or set `DOTNS_ENV=polkadot` to work on Polkadot MainNet,
+> where registrations, transfers and Bulletin uploads spend real DOT; see
+> [Environment Variables](#environment-variables).
+
 ## Installation
 
 ```bash
@@ -65,7 +70,19 @@ dotns pop status --account karim
 ```
 
 Read-only commands can run without configured credentials. In that case the CLI uses a shared dev
-account only as the origin for read calls.
+account as the origin for read calls. Without an auth flag, reads take the account from
+`DOTNS_MNEMONIC` or `DOTNS_KEY_URI` and do not open the default keystore. Commands that report on
+the calling account itself, such as `pop status`, `store info` or `register list`, then report on
+the dev account, and say so on stderr, including under `--json`, where stdout stays clean
+machine-readable output.
+
+Write commands refuse to start when nothing but that default resolves. To sign with the dev account
+on purpose (local chains, throwaway testnet runs) opt in explicitly:
+
+```bash
+dotns <command> --allow-dev-account
+export DOTNS_ALLOW_DEV_ACCOUNT=1
+```
 
 Auth precedence is explicit: command-line `--mnemonic` / `--key-uri` wins first. If you pass
 `--account`, `--keystore-path`, or `--password`, the CLI uses the encrypted keystore and will not
@@ -80,7 +97,7 @@ existing keystores.
 
 > **Experimental:** the QR mobile-wallet signer is still in development and the CLI prints a warning
 > when it is used. The wallet must be on the same People-chain network as the pairing relay (see
-> `--qr-people-rpc`); a production App Store wallet cannot pair with this testnet flow.
+> `--qr-people-rpc`), which defaults to the relay of the selected environment.
 
 Instead of a local key, pair a Polkadot mobile wallet over a QR code with `--signer qr` (or
 `DOTNS_SIGNER=qr`). The CLI prints a QR code, you scan it with the app, and every transaction is
@@ -104,54 +121,57 @@ to force a fresh pairing (and re-approval) on a given run.
 The pairing QR and prompts are written to stderr, so `--json` output on stdout stays machine-clean.
 Requires Node ≥ 21 (for a global `WebSocket`); running under Bun works as-is. A freshly paired
 account is usually not address-mapped, so run `dotns account map --signer qr` once before
-registering or transferring. The wallet pairs under a single product id (default `dotns`) that
+registering or transferring. The wallet pairs under a single product id (default `dotns.dot`) that
 also seeds the signing account; override it with `--qr-app-id` / `DOTNS_QR_APP_ID`.
 
 Pairing rendezvous happens on a People-chain relay, and the CLI and the wallet must be on the same
-one or the wallet's response never arrives and pairing hangs. Select the relay to match the
-wallet's network with `--qr-people-rpc` / `DOTNS_QR_PEOPLE_RPC`: `paseo` (default), `preview`,
-`stable`, or a comma-separated list of `wss` URLs. Set `DOTNS_QR_DEBUG=1` to print the verbose
+one or the wallet's response never arrives and pairing hangs. By default the CLI uses the relay of
+the selected environment: `devnet` (People 1004) on `devnet`, `paseo` on `paseo-v2`, `polkadot` on
+`polkadot`, `preview` on `previewnet`. Select another to match the wallet's network with
+`--qr-people-rpc` / `DOTNS_QR_PEOPLE_RPC`: `polkadot`, `paseo`, `devnet`, `preview`, `stable`, or a
+comma-separated list of `wss` URLs. Set `DOTNS_QR_DEBUG=1` to print the verbose
 pairing handshake trace when diagnosing a stuck pairing.
 
 ## Environment Variables
 
 | Variable                    | Description                                                        |
 | --------------------------- | ------------------------------------------------------------------ |
-| `DOTNS_ENV`                 | dotNS environment: `paseo-v2` (default), `previewnet` or `devnet`  |
+| `DOTNS_ENV`                 | `devnet` (default), `polkadot`, `paseo-v2` or `previewnet`         |
 | `DOTNS_KEYSTORE_PATH`       | Path to keystore directory                                         |
 | `DOTNS_KEYSTORE_PASSWORD`   | Keystore password                                                  |
 | `DOTNS_RPC`                 | Asset Hub RPC endpoint                                             |
 | `DOTNS_BULLETIN_RPC`        | Bulletin chain RPC endpoint                                        |
 | `DOTNS_SKIP_CHAIN_CHECK`    | Set to `1` to skip the genesis check after connecting              |
+| `DOTNS_SKIP_VERSION_CHECK`  | Set to `1` to skip the dotNS protocol version check                |
 | `DOTNS_COMMITMENT_BUFFER`   | Extra seconds to wait after the minimum commitment age (default 6) |
 | `DOTNS_REGISTRATION_DIR`    | Directory for saved registration commitments                       |
 | `DOTNS_UPLOAD_MANIFEST_DIR` | Directory for bulletin upload manifests                            |
 | `DOTNS_MNEMONIC`            | BIP39 mnemonic phrase                                              |
 | `DOTNS_KEY_URI`             | Substrate key URI                                                  |
 | `DOTNS_SIGNER`              | Signer backend: `keystore` (default) or `qr`                       |
-| `DOTNS_QR_APP_ID`           | Product id for QR pairing (default `dotns`)                        |
-| `DOTNS_QR_PEOPLE_RPC`       | QR relay: `paseo`/`preview`/`stable` or wss URLs                   |
+| `DOTNS_QR_APP_ID`           | Product id for QR pairing (default `dotns.dot`)                    |
+| `DOTNS_QR_PEOPLE_RPC`       | QR relay stage (see above) or wss URLs                             |
 | `DOTNS_QR_DEBUG`            | Set to print the verbose QR pairing trace                          |
 
 Select an environment with either an environment variable or a per-command option:
 
 ```bash
-# Default: Paseo V2
-dotns account is-mapped 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+# Default: devnet
+dotns lookup name alice
 
-# Explicitly use Paseo V2 for this shell
-export DOTNS_ENV=paseo-v2
+# Use Polkadot for this shell
+export DOTNS_ENV=polkadot
 dotns account is-mapped 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
 
 # Or override for a single command
-dotns --env paseo-v2 account grant somelabel 0x1234567890AbcdEF1234567890aBcdef12345678
+dotns --env polkadot lookup name alice
 ```
 
-`--network` is an alias of `--env`, and each environment also accepts aliases (for example `dev` for `devnet`). `--rpc` still overrides the endpoint URL, but it does not change the selected dotNS contract addresses. Use `--env`/`DOTNS_ENV` to select the dotNS deployment.
+`--network` is an alias of `--env`, and each environment also accepts aliases (for example `dev` for `devnet`, `mainnet` for `polkadot`). `--rpc` still overrides the endpoint URL, but it does not change the selected dotNS contract addresses. Use `--env`/`DOTNS_ENV` to select the dotNS deployment.
 
 ## Programmatic SDK
 
-The operations the CLI runs are exported from `@parity/dotns-cli/core` as typed functions you can
+The operations the CLI runs are exported from `@polkadot-community-foundation/dotns-cli/core` as typed functions you can
 call from your own TypeScript. You build a context with a chain client, an SS58 origin, and a
 `PolkadotSigner` you supply; every operation takes that context. There is no raw-contract surface:
 addresses come from `DOTNS_ENVIRONMENTS[id].contracts` and the ABI is applied internally, so callers
@@ -171,9 +191,9 @@ import {
   getContentHash,
   resolveTransferRecipient,
   transferName,
-} from "@parity/dotns-cli/core";
+} from "@polkadot-community-foundation/dotns-cli/core";
 
-const client = createClient(getWsProvider("wss://paseo-asset-hub-next-rpc.polkadot.io"));
+const client = createClient(getWsProvider("wss://asset-hub-paseo-rpc.n.dwellir.com"));
 // Token decimals and symbol come from the chain, so deposit caps and amounts match it.
 const clientWrapper = new ReviveClientWrapper(
   client.getTypedApi(paseo),
@@ -183,7 +203,7 @@ const ctx = createDotnsContext({
   clientWrapper,
   origin, // your SS58 address
   signer, // your PolkadotSigner
-  environment: "paseo-v2",
+  environment: "devnet",
 });
 
 await registerName(ctx, "aliceweb3"); // owner defaults to your mapped EVM address
@@ -196,6 +216,10 @@ await transferName(ctx, "aliceweb3", recipient);
 
 `paseo` comes from descriptors generated for the target chain; outside this repository, generate
 your own with `papi add`.
+
+The SDK does not check the network's dotNS protocol version on its own: call
+`checkProtocolVersion(ctx)` once after creating the context. It returns the declared release, or
+throws `UnsupportedProtocolVersionError` when the network declares one this SDK does not support.
 
 `createDotnsContext` rejects an EVM (H160) origin, and a write without a signer throws
 `MissingSignerError`. The origin must be Revive address-mapped before `registerName`/`transferName`.
@@ -422,7 +446,7 @@ dotns --password test-password bulletin upload ./dist --profile-upload --account
 dotns --password test-password bulletin upload ./dist --profile-upload --profile-output ./report.json --account default
 
 # Custom RPC
-dotns --password test-password bulletin upload ./image.png --bulletin-rpc wss://paseo-bulletin-next-rpc.polkadot.io --account default
+dotns --password test-password bulletin upload ./image.png --bulletin-rpc wss://bulletin-paseo.tservices.es:8443 --account default
 
 # Skip history
 dotns --password test-password bulletin upload ./image.png --no-history --account default
@@ -456,19 +480,19 @@ Authorise accounts to upload to Bulletin chain. Requires sudo.
 
 ```bash
 # Authorise account
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
 
 # With custom limits
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --transactions 500000 --bytes 549755813888
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --transactions 2000 --bytes 268435456
 
 # Force re-authorisation
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --force
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --force
 
 # JSON output
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --json
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --json
 
 # Custom RPC
-dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --bulletin-rpc wss://paseo-bulletin-next-rpc.polkadot.io
+dotns --key-uri //Eve bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty --bulletin-rpc wss://bulletin-paseo.tservices.es:8443
 ```
 
 ### Bulletin Refresh
@@ -476,7 +500,7 @@ dotns --key-uri //Alice bulletin authorize 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC9
 Extend the expiration of an existing Bulletin authorisation.
 
 ```bash
-dotns --key-uri //Alice bulletin refresh 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
+dotns --key-uri //Eve bulletin refresh 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
 ```
 
 ### Bulletin Verify

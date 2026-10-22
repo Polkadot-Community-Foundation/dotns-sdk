@@ -109,7 +109,7 @@ async function authenticatePairing(
         new Error(
           `QR pairing timed out after ${Math.round(pairTimeoutMs / 1000)}s with no wallet ` +
             `response on ${relay}. The wallet must be on this same People chain; select a ` +
-            `matching relay with --qr-people-rpc (paseo|preview|stable or wss URLs).`,
+            `matching relay with --qr-people-rpc (polkadot|paseo|devnet|preview|stable or wss URLs).`,
         ),
       );
     }, pairTimeoutMs);
@@ -177,7 +177,10 @@ async function grantSigningAllowance(
   session: WalletSession,
   adapter: TerminalAdapter,
 ): Promise<void> {
-  const smartContract: AllocatableResource = { tag: "SmartContractAllowance", value: 0 };
+  const smartContract: AllocatableResource = {
+    tag: "SmartContractAllowance",
+    value: { tag: "Index", value: 0 },
+  };
   if (await getCachedAllocation(adapter, smartContract)) {
     return;
   }
@@ -228,7 +231,7 @@ export async function createQrSigner(options?: {
   try {
     await grantSigningAllowance(session, adapter);
 
-    const signer = createSessionSigner(session, adapter);
+    const signer = await createSessionSigner(session, adapter);
     const origin = encodeAddress(signer.publicKey, SUBSTRATE_SS58_PREFIX);
     process.once("exit", () => {
       void adapter.destroy();

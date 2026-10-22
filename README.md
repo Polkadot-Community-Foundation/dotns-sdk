@@ -9,7 +9,7 @@
 
 This repository is the home for dotNS developer client tooling. The goal is to make dotNS interactions reproducible, auditable, and consistent across environments and languages.
 
-**dotNS** refers to the protocol. Repository, package, and binary names use lowercase (for example `dotns-sdk`, `@parity/dotns-cli`, `dotns`).
+**dotNS** refers to the protocol. Repository, package, and binary names use lowercase (for example `dotns-sdk`, `@polkadot-community-foundation/dotns-cli`, `dotns`).
 
 dotNS will be accessed from multiple surfaces: scripts, command-line tools, web apps, backend services, indexers. If each surface re-implements name parsing, ABI handling, network configuration, and transaction encoding, behaviour drifts. Drift shows up as subtle incompatibilities: a name that validates in one place but not another, a call encoded differently across clients, or a release that “works” for one consumer and breaks another.
 
@@ -17,7 +17,7 @@ This monorepo exists to concentrate shared logic in one place, with explicit bou
 
 ## Status
 
-This is reference and proof-of-concept tooling for the dotNS protocol, intended for reference and experimentation. Unless a specific release states otherwise, it has not received a full security audit; see [SECURITY.md](./SECURITY.md) for the security status and disclosure process. The defaults target Paseo and its Bulletin chain; point the configuration at your own network before relying on it elsewhere.
+This is reference and proof-of-concept tooling for the dotNS protocol, intended for reference and experimentation. Unless a specific release states otherwise, it has not received a full security audit; see [SECURITY.md](./SECURITY.md) for the security status and disclosure process. The defaults target Polkadot Hub and the Polkadot Bulletin chain; select a testnet with `--env`, or point the configuration at your own network before relying on it elsewhere.
 
 ## Scope
 
@@ -37,7 +37,7 @@ Examples:
 - scripts that operate across networks (smoke tests, migrations, verification)
 - higher-level flows (register, set resolver records, set reverse, Store writes) as composable functions
 
-The CLI's named operations are also exported as a programmatic SDK (`@parity/dotns-cli/core`) that
+The CLI's named operations are also exported as a programmatic SDK (`@polkadot-community-foundation/dotns-cli/core`) that
 takes a caller-supplied signer, including QR-paired mobile wallets. See the CLI README's
 "Programmatic SDK" section and the [SDK docs page](https://dotns.paseo.li/#/docs/tools/sdk).
 
@@ -50,6 +50,8 @@ Non-goals:
 ## Repository structure
 
 - `packages/*`: TypeScript packages (Bun workspace)
+  - `packages/cli`: the `@polkadot-community-foundation/dotns-cli` command-line tool and its programmatic SDK (`@polkadot-community-foundation/dotns-cli/core`). This is what releases publish.
+  - `packages/ui`: a web app. It is not maintained at present, does not work against current deployments, and is neither released nor deployed by CLI releases.
 - `crates/*`: Rust crates (Cargo workspace, optional; not present yet)
 - `shared/*`: cross-language artefacts (ABIs, deployments, schemas; not present yet)
 - `scripts/*`: repo-level scripts (fetch / generate / check)

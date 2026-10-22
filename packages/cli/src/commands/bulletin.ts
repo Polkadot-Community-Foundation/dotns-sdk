@@ -9,7 +9,7 @@ import { bulletin } from "@polkadot-api/descriptors";
 import { importer } from "ipfs-unixfs-importer";
 import type { CID } from "multiformats/cid";
 import { encodeIpfsContenthash } from "../bulletin/cid";
-import { verifyCidResolution, verifySingleFileCid } from "../bulletin/ipfs";
+import { verifySingleFileCid } from "../bulletin/ipfs";
 import { completedBlocksFromManifest, loadManifestForResume } from "../bulletin/uploadManifest";
 import {
   isRetryableUploadError,
@@ -47,11 +47,9 @@ import type {
 import {
   DEFAULT_AUTHORIZATION_TRANSACTIONS,
   DEFAULT_AUTHORIZATION_BYTES,
-  DEFAULT_VERIFICATION_GATEWAY,
   BULLETIN_BLOCK_TIME_MS,
   DEFAULT_UPLOAD_MAX_RETRIES,
   MAX_SINGLE_UPLOAD_SIZE_BYTES,
-  getActiveDotnsEnvironment,
 } from "../utils/constants";
 import {
   formatErrorMessage,
@@ -1009,11 +1007,7 @@ export async function storeDirectory(
     accountAddress,
     onPhase,
     onRetry,
-    // Verify against the active environment's gateway (falls back to the
-    // paseo default only when the env has none), so a --env deploy verifies
-    // on that env's gateway instead of always hitting paseo.
-    verificationGateway = getActiveDotnsEnvironment().ipfsGatewayUrl ??
-      DEFAULT_VERIFICATION_GATEWAY,
+    verificationGateway,
     maxRetries = DEFAULT_UPLOAD_MAX_RETRIES,
     waitForFinalization = false,
   } = options;
@@ -1079,16 +1073,21 @@ export async function storeDirectory(
 
           console.log(chalk.gray("  root cid: ") + chalk.cyan(rootCid.toString()));
 
-          emitPhase(onPhase, "verify", "start", "Verifying content resolution");
           const rootCidString = rootCid.toString();
 
-          const rootVerification = await verifyCidResolution(rootCidString, verificationGateway);
+          emitPhase(onPhase, "verify", "start", "Verifying content resolution");
+          const rootVerification = await verifySingleFileCid(rootCidString, verificationGateway);
 
           if (rootVerification.resolvable) {
-            emitPhase(onPhase, "verify", "success", "Root CID resolvable");
+            emitPhase(
+              onPhase,
+              "verify",
+              "success",
+              `Root CID verified via ${rootVerification.gateway}`,
+            );
           } else {
             emitPhase(onPhase, "verify", "warning", "Root CID not yet resolvable");
-            console.log(chalk.gray("  gateway:  ") + chalk.white(verificationGateway));
+            console.log(chalk.gray("  checked:  ") + chalk.white(rootVerification.gateway));
             console.log(chalk.yellow("  Content may take time to propagate through the network"));
           }
 

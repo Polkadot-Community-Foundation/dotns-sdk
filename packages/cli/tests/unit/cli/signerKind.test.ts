@@ -7,6 +7,7 @@ import {
   DEFAULT_QR_APP_ID,
   ENV,
 } from "../../../src/cli/env";
+import { setActiveDotnsEnvironment } from "../../../src/utils/constants";
 
 const SAVED_ENV = [ENV.SIGNER, ENV.QR_APP_ID, ENV.QR_PEOPLE_RPC, ENV.MNEMONIC] as const;
 const originalEnv = Object.fromEntries(SAVED_ENV.map((name) => [name, process.env[name]]));
@@ -53,9 +54,26 @@ describe("resolveQrAppId", () => {
 });
 
 describe("resolveQrPeopleEndpoints", () => {
-  test("defaults to the paseo stage", () => {
+  test("defaults to the relay of the selected environment", () => {
     delete process.env[ENV.QR_PEOPLE_RPC];
-    expect(resolveQrPeopleEndpoints()).toEqual(["wss://paseo-people-next-system-rpc.polkadot.io"]);
+    try {
+      setActiveDotnsEnvironment("polkadot");
+      expect(resolveQrPeopleEndpoints()).toEqual(["wss://polkadot-people-rpc.polkadot.io"]);
+      setActiveDotnsEnvironment("paseo-v2");
+      expect(resolveQrPeopleEndpoints()).toEqual([
+        "wss://paseo-people-next-system-rpc.polkadot.io",
+      ]);
+      setActiveDotnsEnvironment("previewnet");
+      expect(resolveQrPeopleEndpoints()).toEqual(["wss://previewnet.substrate.dev/people"]);
+      setActiveDotnsEnvironment("devnet");
+      expect(resolveQrPeopleEndpoints()).toEqual([
+        "wss://people-paseo.rotko.net",
+        "wss://people-paseo.gatotech.network",
+        "wss://rpc.interweb-it.com/people-paseo",
+      ]);
+    } finally {
+      setActiveDotnsEnvironment("paseo-v2");
+    }
   });
 
   test("resolves named stages", () => {
