@@ -16,7 +16,7 @@
       <div class="p-4 border border-dot-border rounded-lg bg-dot-surface">
         <p class="text-xs text-dot-text-tertiary mb-1">Paseo AssetHub</p>
         <p class="font-mono text-sm text-dot-accent break-all">
-          0xf7Ad3F44F316C73E4a2b46b1ed48d376bCc9E639
+          0xc609e0c2DAB4433d55a32FB098Db8788C1956302
         </p>
       </div>
     </div>
@@ -235,7 +235,7 @@ import DocCodeBlock from "@/components/docs/DocCodeBlock.vue";
 import DocCallout from "@/components/docs/DocCallout.vue";
 import DocBadge from "@/components/docs/DocBadge.vue";
 
-const exampleCode = `import { createPublicClient, defineChain, http, keccak256, toBytes } from "viem";
+const exampleCode = `import { createPublicClient, defineChain, http, namehash } from "viem";
 
 // ABI fragments for the functions used in this example
 const registrarAbi = [
@@ -269,11 +269,10 @@ const client = createPublicClient({
   transport: http(),
 });
 
-const REGISTRAR = "0xf7Ad3F44F316C73E4a2b46b1ed48d376bCc9E639";
+const REGISTRAR = "0xc609e0c2DAB4433d55a32FB098Db8788C1956302";
 
-// Check if a name is available
-const labelhash = keccak256(toBytes("alice"));
-const tokenId = BigInt(labelhash);
+// Check if a name is available. The token id is the namehash of the full name.
+const tokenId = BigInt(namehash("alice.dot"));
 
 const isAvailable = await client.readContract({
   address: REGISTRAR,

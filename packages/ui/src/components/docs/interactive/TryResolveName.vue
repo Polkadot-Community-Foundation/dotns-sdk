@@ -114,7 +114,7 @@ const name = '${label}'
 const node = namehash(\`\${name}.dot\`)
 
 const address = await client.readContract({
-  address: '0xA8988eA083174ea94Ed1D686f0F073a10f65598D',
+  address: '0xFcB74C073a2d14dc65B178Bb873f4dE51318DDC2',
   abi: [{
     type: 'function',
     name: 'addressOf',

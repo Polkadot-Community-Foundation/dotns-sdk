@@ -230,7 +230,7 @@ const comparisons = [
 
 const resolveBeforeSendCode = `import { createPublicClient, http, parseEther, namehash } from "viem";
 
-const RESOLVER = "0xA8988eA083174ea94Ed1D686f0F073a10f65598D";
+const RESOLVER = "0xFcB74C073a2d14dc65B178Bb873f4dE51318DDC2";
 
 // User types "alice.dot" into the send field
 const input = "alice.dot";
@@ -260,10 +260,10 @@ const tx = await walletClient.sendTransaction({
 
 const displayIdentityCode = `import { namehash, getAddress } from "viem";
 
-const REVERSE_RESOLVER = "0x259B9D8199c29d2EF132264ad05f8F74F3115A2E";
+const REVERSE_RESOLVER = "0x736e067290AE71f841399575ABfc8b2BAA5Eed7E";
 
 // Given an address from a governance vote or transaction
-const voterAddress = "0xa1b2b939E82b2ecE55Bd8a0E283818BfC1CA6CDc";
+const voterAddress = "0xb052E5EfC5ADEff1f21d48DEfb5169Cb394A1a73";
 
 // Reverse-resolve to get the primary .dot name.
 // nameOf returns the full name including the ".dot" suffix,
@@ -287,7 +287,7 @@ if (name) {
 const profileCardCode = `import { namehash } from "viem";
 
 // Text records live on the content resolver
-const CONTENT_RESOLVER = "0x8A26480b0B5Df3d4D9b95adc24a5Ecb33A5b8F64";
+const CONTENT_RESOLVER = "0x7e75491ecfb04900EB05ee63CABA2B33900aABB5";
 
 // Build a profile card from text records
 const label = "alice";

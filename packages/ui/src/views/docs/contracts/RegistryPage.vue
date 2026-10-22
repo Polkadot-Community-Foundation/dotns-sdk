@@ -15,7 +15,7 @@
       <div class="p-4 border border-dot-border rounded-lg bg-dot-surface">
         <p class="text-xs text-dot-text-tertiary mb-1">Paseo AssetHub</p>
         <p class="font-mono text-sm text-dot-accent break-all">
-          0xa1b2b939E82b2ecE55Bd8a0E283818BfC1CA6CDc
+          0xb052E5EfC5ADEff1f21d48DEfb5169Cb394A1a73
         </p>
       </div>
     </div>
@@ -319,7 +319,7 @@ const client = createPublicClient({
   transport: http(),
 });
 
-const REGISTRY = "0xa1b2b939E82b2ecE55Bd8a0E283818BfC1CA6CDc";
+const REGISTRY = "0xb052E5EfC5ADEff1f21d48DEfb5169Cb394A1a73";
 const node = namehash("alice.dot");
 
 // Check if a node exists and get its owner

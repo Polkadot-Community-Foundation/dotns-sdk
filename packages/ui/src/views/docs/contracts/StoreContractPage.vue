@@ -18,7 +18,7 @@
       <div class="p-4 border border-dot-border rounded-lg bg-dot-surface">
         <p class="text-xs text-dot-text-tertiary mb-1">StoreFactory &mdash; Paseo AssetHub</p>
         <p class="font-mono text-sm text-dot-accent break-all">
-          0x692047C1477a017F287488E1c85F96Ca28C23fD8
+          0x5Df012daA06cA2602DA153309C2E3A83284Cb879
         </p>
       </div>
     </div>
@@ -428,7 +428,7 @@ const walletClient = createWalletClient({
   transport: custom(window.ethereum),
 });
 
-const STORE_FACTORY = "0x692047C1477a017F287488E1c85F96Ca28C23fD8";
+const STORE_FACTORY = "0x5Df012daA06cA2602DA153309C2E3A83284Cb879";
 
 // Get or claim a Store
 let storeAddress = await client.readContract({

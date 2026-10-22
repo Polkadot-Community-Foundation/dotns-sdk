@@ -17,7 +17,7 @@
       <div class="p-4 border border-dot-border rounded-lg bg-dot-surface">
         <p class="text-xs text-dot-text-tertiary mb-1">Paseo AssetHub</p>
         <p class="font-mono text-sm text-dot-accent break-all">
-          0x4909bFb3f4Fd86244abD6430fDfA0Ce5C91aD0c4
+          0xD5Ee34610F06f7FF4668aB4fabE2393B65a43AE7
         </p>
       </div>
     </div>
@@ -440,7 +440,7 @@ const client = createPublicClient({
   transport: http(),
 });
 
-const POP_RULES = "0x4909bFb3f4Fd86244abD6430fDfA0Ce5C91aD0c4";
+const POP_RULES = "0xD5Ee34610F06f7FF4668aB4fabE2393B65a43AE7";
 
 // Classify a name
 const [status, message] = await client.readContract({
