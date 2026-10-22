@@ -1,13 +1,14 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { isAddress, zeroAddress, type Address } from "viem";
-import type { PolkadotSigner } from "polkadot-api";
 import { SignerManager, HostProvider, type SignerAccount } from "@parity/product-sdk-signer";
 import { requestPermission, requestResourceAllocation } from "@parity/product-sdk-host";
 import { useUserStoreManager } from "./useUserStoreManager";
 import { getChainClient } from "@/composables/useTypedAPI";
 import { getSelfDotNs } from "@/lib/selfDotNs";
 import { PopStatus, type TransactionStatus } from "@/type";
+
+type AccountSigner = ReturnType<SignerAccount["getSigner"]>;
 
 // Product-account signing is handled natively by HostProvider's `productAccount`
 // option (signer ≥0.6.0): connect() fetches the per-dapp derived account (skipping
@@ -105,7 +106,7 @@ export const useWalletStore = defineStore("useWalletStore", () => {
   const substrateAddress = ref<string | null>(null);
   const hasWalletExtension = ref(false);
   const isLoading = ref(false);
-  const injected = ref<PolkadotSigner | null>(null);
+  const injected = ref<AccountSigner | null>(null);
   const currentAccount = ref<SignerAccount | null>(null);
 
   const transactionStatus = ref<TransactionStatus>("idle");
@@ -264,18 +265,18 @@ export const useWalletStore = defineStore("useWalletStore", () => {
     }
   }
 
-  function getInjected(): PolkadotSigner {
+  function getInjected(): AccountSigner {
     ensureConnected();
     return injected.value!;
   }
 
-  let pendingSignerReady: Promise<PolkadotSigner> | null = null;
+  let pendingSignerReady: Promise<AccountSigner> | null = null;
   // Connect-if-needed + confirm the host sign gate (ChainSubmit) and request
   // the cached write allowances before a signed write. Concurrent writes share
   // one in-flight request. Reads never call this, so passive browsing prompts
   // for nothing. Awaiting ensureChainSubmit() here guarantees the grant lands
   // before signing even if the write fires before connect's request resolves.
-  async function ensureSignerReady(): Promise<PolkadotSigner> {
+  async function ensureSignerReady(): Promise<AccountSigner> {
     if (pendingSignerReady) return pendingSignerReady;
     pendingSignerReady = (async () => {
       await ensureReady();
