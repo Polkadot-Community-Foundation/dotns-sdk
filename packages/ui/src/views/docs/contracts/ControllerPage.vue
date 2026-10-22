@@ -16,7 +16,7 @@
       <div class="p-4 border border-dot-border rounded-lg bg-dot-surface">
         <p class="text-xs text-dot-text-tertiary mb-1">Paseo AssetHub</p>
         <p class="font-mono text-sm text-dot-accent break-all">
-          0x674b705268DAE369F0a7BE9cbaCDb928b8BA38C2
+          0x59dcF8BfFFa7239243785C3fC336D8Bb22312e8c
         </p>
       </div>
     </div>
@@ -342,7 +342,7 @@ const walletClient = createWalletClient({
   transport: custom(window.ethereum),
 });
 
-const CONTROLLER = "0x674b705268DAE369F0a7BE9cbaCDb928b8BA38C2";
+const CONTROLLER = "0x59dcF8BfFFa7239243785C3fC336D8Bb22312e8c";
 
 // Step 1: Check availability
 const isAvailable = await client.readContract({

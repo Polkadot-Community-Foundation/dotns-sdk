@@ -116,7 +116,7 @@ const key = '${recordKey}'
 const node = namehash(\`\${name}.dot\`)
 
 const value = await client.readContract({
-  address: '0x8A26480b0B5Df3d4D9b95adc24a5Ecb33A5b8F64',
+  address: '0x7e75491ecfb04900EB05ee63CABA2B33900aABB5',
   abi: [{
     type: 'function',
     name: 'text',

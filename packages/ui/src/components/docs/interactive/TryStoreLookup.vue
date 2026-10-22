@@ -131,7 +131,7 @@ const codeExample = computed(() => {
   const addr = resolvedAddress.value || "0x...";
   return `import { createPublicClient, http, zeroAddress } from 'viem'
 
-const STORE_FACTORY = '0x692047C1477a017F287488E1c85F96Ca28C23fD8'
+const STORE_FACTORY = '0x5Df012daA06cA2602DA153309C2E3A83284Cb879'
 
 const client = createPublicClient({
   chain: { id: 420420417, name: 'Paseo AssetHub',

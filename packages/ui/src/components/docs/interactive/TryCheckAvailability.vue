@@ -116,7 +116,7 @@ const status = ref<"idle" | "loading" | "result" | "error">("idle");
 
 const viemCode = computed(() => {
   const label = normalizeNameInput(name.value) || "alice";
-  return `import { createPublicClient, http, keccak256, toHex } from 'viem'
+  return `import { createPublicClient, http, namehash } from 'viem'
 
 const paseoAssetHub = {
   id: 420420417,
@@ -133,11 +133,11 @@ const client = createPublicClient({
 })
 
 const label = '${label}'
-const tokenId = BigInt(keccak256(toHex(label)))
+const tokenId = BigInt(namehash(label + '.dot'))
 
 try {
   const owner = await client.readContract({
-    address: '0xf7Ad3F44F316C73E4a2b46b1ed48d376bCc9E639',
+    address: '0xc609e0c2DAB4433d55a32FB098Db8788C1956302',
     abi: [{
       type: 'function',
       name: 'ownerOf',

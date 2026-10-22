@@ -130,7 +130,7 @@ const client = createPublicClient({
 const name = '${label}'
 
 const result = await client.readContract({
-  address: '0x4909bFb3f4Fd86244abD6430fDfA0Ce5C91aD0c4',
+  address: '0xD5Ee34610F06f7FF4668aB4fabE2393B65a43AE7',
   abi: [{
     type: 'function',
     name: 'classifyName',

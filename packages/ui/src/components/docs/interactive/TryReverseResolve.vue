@@ -102,7 +102,7 @@ const client = createPublicClient({
 const evmAddress = '${addr}'
 
 const name = await client.readContract({
-  address: '0x259B9D8199c29d2EF132264ad05f8F74F3115A2E',
+  address: '0x736e067290AE71f841399575ABfc8b2BAA5Eed7E',
   abi: [{
     type: 'function',
     name: 'nameOf',
