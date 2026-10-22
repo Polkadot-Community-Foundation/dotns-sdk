@@ -135,7 +135,7 @@ export type AuthOptionValues = {
   signer?: "keystore" | "qr";
   /** App id used when pairing a QR mobile wallet */
   qrAppId?: string;
-  /** QR pairing relay: a stage name (polkadot|paseo|preview|stable) or wss URLs */
+  /** QR pairing relay: a stage name (polkadot|paseo|devnet|preview|stable) or wss URLs */
   qrPeopleRpc?: string;
   /** Force a fresh QR pairing instead of reusing the cached session */
   qrFresh?: boolean;
