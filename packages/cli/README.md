@@ -121,7 +121,7 @@ to force a fresh pairing (and re-approval) on a given run.
 The pairing QR and prompts are written to stderr, so `--json` output on stdout stays machine-clean.
 Requires Node ≥ 21 (for a global `WebSocket`); running under Bun works as-is. A freshly paired
 account is usually not address-mapped, so run `dotns account map --signer qr` once before
-registering or transferring. The wallet pairs under a single product id (default `dotns`) that
+registering or transferring. The wallet pairs under a single product id (default `dotns.dot`) that
 also seeds the signing account; override it with `--qr-app-id` / `DOTNS_QR_APP_ID`.
 
 Pairing rendezvous happens on a People-chain relay, and the CLI and the wallet must be on the same
@@ -149,7 +149,7 @@ pairing handshake trace when diagnosing a stuck pairing.
 | `DOTNS_MNEMONIC`            | BIP39 mnemonic phrase                                              |
 | `DOTNS_KEY_URI`             | Substrate key URI                                                  |
 | `DOTNS_SIGNER`              | Signer backend: `keystore` (default) or `qr`                       |
-| `DOTNS_QR_APP_ID`           | Product id for QR pairing (default `dotns`)                        |
+| `DOTNS_QR_APP_ID`           | Product id for QR pairing (default `dotns.dot`)                    |
 | `DOTNS_QR_PEOPLE_RPC`       | QR relay stage (see above) or wss URLs                             |
 | `DOTNS_QR_DEBUG`            | Set to print the verbose QR pairing trace                          |
 

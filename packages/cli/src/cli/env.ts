@@ -34,7 +34,7 @@ export type SignerKind = "keystore" | "qr";
 // seeds the product-account derivation (product/{id}/{index}) that signs and owns the
 // name and receives PGAS funding, and is the name the wallet shows on its approval
 // screen.
-export const DEFAULT_QR_APP_ID = "dotns";
+export const DEFAULT_QR_APP_ID = "dotns.dot";
 
 // People-chain statement-store relays the pairing handshake rendezvous on. The CLI and
 // the wallet must share one, or the wallet's response never reaches the CLI and pairing
