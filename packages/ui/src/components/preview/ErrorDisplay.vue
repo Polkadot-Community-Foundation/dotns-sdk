@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useCopyToClipboard } from "@/composables";
+import { IPFS_GATEWAY } from "@/lib/networks";
 
 defineProps<{
   message: string;
@@ -97,7 +98,7 @@ function handleRetry() {
           </button>
           <a
             v-if="cid"
-            :href="`https://paseo-bulletin-next-ipfs.polkadot.io/ipfs/${cid}/`"
+            :href="`${IPFS_GATEWAY}/${cid}/`"
             target="_blank"
             rel="noopener noreferrer"
             class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-dot-text-secondary hover:text-dot-text-primary rounded-lg border border-dot-border hover:border-dot-border-strong transition-colors text-sm"

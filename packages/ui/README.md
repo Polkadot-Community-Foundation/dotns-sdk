@@ -53,10 +53,11 @@ bun run preview
 
 ## RPC configuration
 
-The project currently targets Paseo. A typical endpoint is:
+The project targets the products devnet: Paseo Asset Hub (para 1000), Paseo People (1004) and
+Bulletin (1010). The Asset Hub endpoint is:
 
 ```text
-wss://paseo-asset-hub-next-rpc.polkadot.io
+wss://asset-hub-paseo-rpc.n.dwellir.com
 ```
 
 RPCs can be adjusted in code or environment configuration depending on deployment needs.

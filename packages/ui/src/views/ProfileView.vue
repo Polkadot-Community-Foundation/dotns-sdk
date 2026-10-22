@@ -555,7 +555,7 @@
                       </Button>
                       <Button size="sm" variant="secondary" as-child>
                         <a
-                          :href="`https://paseo-bulletin-next-ipfs.polkadot.io/ipfs/${cid}`"
+                          :href="`${IPFS_GATEWAY}/${cid}`"
                           target="_blank"
                           rel="noopener noreferrer"
                         >
@@ -643,6 +643,7 @@ import ResolveIPFSModal from "../components/modals/ResolveIPFSModal.vue";
 import TransactionStatus from "../components/TransactionStatus.vue";
 import type { MyDomain, TransactionResult, NameRequirement } from "@/type";
 import { zeroHash, type Address } from "viem";
+import { IPFS_GATEWAY } from "@/lib/networks";
 import { useRouter } from "vue-router";
 import { useToast } from "vue-toastification";
 import { dotliViewUrls } from "@/lib/dotli";

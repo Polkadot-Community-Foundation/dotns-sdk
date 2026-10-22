@@ -9,6 +9,7 @@ import { decodeFromPreview } from "@/lib/preview";
 import { getPreviewContent, clearPreviewContent } from "@/lib/previewCache";
 import { fetchCidContentViaHost } from "@/lib/hostPreimage";
 import { IpfsContentTooLargeError, MAX_INLINE_PREVIEW_BYTES } from "@/lib/ipfs";
+import { IPFS_GATEWAY } from "@/lib/networks";
 
 function detectMimeType(data: Uint8Array): string {
   if (data.length < 4) return "application/octet-stream";
@@ -154,9 +155,9 @@ async function fetchContent() {
     } else {
       error.value = "Content not retrievable via the host. It may still be propagating.";
     }
-    // Shareable link to the pre-allowed Parity gateway (user-clicked, not an
-    // auto-fetch) — content itself renders from the local host-fetched blob above.
-    resolvedGatewayUrl.value = `https://paseo-bulletin-next-ipfs.polkadot.io/ipfs/${cid.value}`;
+    // Shareable gateway link (user-clicked, not an auto-fetch); content itself
+    // renders from the local host-fetched blob above.
+    resolvedGatewayUrl.value = `${IPFS_GATEWAY}/${cid.value}`;
   } catch (fetchError) {
     if (requestId !== previewRequestId || fetchController.signal.aborted) {
       return;

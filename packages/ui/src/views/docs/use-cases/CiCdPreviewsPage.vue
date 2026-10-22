@@ -265,7 +265,7 @@ jobs:
       bulletin-mnemonic: \${{ secrets.BULLETIN_MNEMONIC }}`;
 
 const cachingExample = `Hashing build output: 24 files (3.4 MB)
-Deployment cache key: deploy-paseo-v2-next-1f3c9ab2
+Deployment cache key: deploy-devnet-next-1f3c9ab2
 
 Cache hit — reusing CID: bafybeif2uyxcrahg5kkjramreslhmssp4dkexumd7vqp5dmhtrxqjxngle
 Skipping Bulletin upload (build unchanged for this environment)

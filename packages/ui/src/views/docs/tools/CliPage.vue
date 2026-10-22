@@ -122,11 +122,12 @@
         Pairing happens on a People-chain relay. The CLI and the wallet must use the same relay, or
         pairing fails. Match it to your wallet build with
         <span class="font-mono">--qr-people-rpc</span> /
-        <span class="font-mono">DOTNS_QR_PEOPLE_RPC</span>:
-        <span class="font-mono">paseo</span> (default), <span class="font-mono">preview</span>,
-        <span class="font-mono">stable</span>, or a comma-separated list of
-        <span class="font-mono">wss://</span> URLs. A freshly paired account must be address-mapped
-        and funded on Asset Hub before it can register. Set
+        <span class="font-mono">DOTNS_QR_PEOPLE_RPC</span>. It defaults to the relay of the selected
+        environment, People 1004 on devnet. The stages are <span class="font-mono">devnet</span>,
+        <span class="font-mono">polkadot</span>, <span class="font-mono">paseo</span>,
+        <span class="font-mono">preview</span> and <span class="font-mono">stable</span>, or pass a
+        comma-separated list of <span class="font-mono">wss://</span> URLs. A freshly paired account
+        must be address-mapped and funded on Asset Hub before it can register. Set
         <span class="font-mono">DOTNS_QR_DEBUG=1</span> to print the verbose pairing trace.
       </DocCallout>
       <DocCallout variant="tip" title="Session reuse and --qr-fresh">
@@ -278,17 +279,17 @@ const installTabs = [
   {
     id: "npm",
     label: "npm",
-    code: "npm install -g @parity/dotns-cli",
+    code: "npm install -g @polkadot-community-foundation/dotns-cli",
   },
   {
     id: "bun",
     label: "bun",
-    code: "bun add -g @parity/dotns-cli",
+    code: "bun add -g @polkadot-community-foundation/dotns-cli",
   },
   {
     id: "yarn",
     label: "yarn",
-    code: "yarn global add @parity/dotns-cli",
+    code: "yarn global add @polkadot-community-foundation/dotns-cli",
   },
 ];
 
@@ -317,7 +318,7 @@ const authMethods = [
 ];
 
 const envVars = [
-  { name: "DOTNS_ENV", description: "DotNS environment (default: paseo-v2)" },
+  { name: "DOTNS_ENV", description: "DotNS environment (default: devnet)" },
   { name: "DOTNS_RPC", description: "WebSocket RPC endpoint for the Asset Hub chain" },
   { name: "DOTNS_BULLETIN_RPC", description: "WebSocket RPC endpoint for the Bulletin chain" },
   { name: "DOTNS_MNEMONIC", description: "BIP-39 mnemonic phrase" },
@@ -329,16 +330,21 @@ const envVars = [
     description: "Extra seconds to wait after minCommitmentAge before reveal",
   },
   { name: "DOTNS_SIGNER", description: "Signer backend: keystore (default) or qr [experimental]" },
-  { name: "DOTNS_QR_APP_ID", description: "Product id for QR pairing (default: dotns)" },
+  { name: "DOTNS_QR_APP_ID", description: "Product id for QR pairing (default: dotns.dot)" },
   {
     name: "DOTNS_QR_PEOPLE_RPC",
-    description: "QR pairing relay: paseo (default) / preview / stable, or wss URLs",
+    description:
+      "QR pairing relay: the selected environment's by default, or devnet / polkadot / paseo / preview / stable / wss URLs",
   },
   { name: "DOTNS_QR_DEBUG", description: "Set to print the verbose QR pairing trace" },
 ];
 
 const sharedOptions = [
-  { flag: "--env <environment>", description: "DotNS environment: paseo-v2 (env: DOTNS_ENV)" },
+  {
+    flag: "--env <environment>",
+    description:
+      "DotNS environment: devnet (default), polkadot, paseo-v2 or previewnet (env: DOTNS_ENV)",
+  },
   { flag: "--network <environment>", description: "Alias for --env" },
   { flag: "--rpc <wsUrl>", description: "WebSocket RPC endpoint (env: DOTNS_RPC)" },
   {
@@ -359,7 +365,8 @@ const sharedOptions = [
   { flag: "--qr-app-id <id>", description: "Product id for QR pairing (env: DOTNS_QR_APP_ID)" },
   {
     flag: "--qr-people-rpc <stageOrUrls>",
-    description: "QR pairing relay: paseo|preview|stable or wss URLs (env: DOTNS_QR_PEOPLE_RPC)",
+    description:
+      "QR pairing relay: polkadot|paseo|devnet|preview|stable or wss URLs (env: DOTNS_QR_PEOPLE_RPC)",
   },
   { flag: "--qr-fresh", description: "Force a fresh QR pairing, ignoring any cached session" },
   {
@@ -584,8 +591,7 @@ const commandReference: CmdGroup[] = [
         options: [
           {
             flag: "--bulletin-rpc <wsUrl>",
-            description:
-              'Bulletin RPC endpoint (default: "wss://paseo-bulletin-next-rpc.polkadot.io")',
+            description: "Bulletin RPC endpoint (defaults to the active environment's)",
           },
           {
             flag: "--transactions <count>",
@@ -785,7 +791,7 @@ dotns lookup name alice -k "//Alice"`;
 const qrSignerExamples = `# Pair a mobile wallet over a QR code instead of a local key
 dotns register domain --name myname --signer qr
 
-# Match the pairing relay to the wallet's network (default is paseo)
+# Match the pairing relay to the wallet's network (default: the selected environment's)
 dotns register domain --name myname --signer qr --qr-people-rpc preview
 
 # Force a fresh pairing and re-approval, ignoring the cached session
@@ -845,7 +851,7 @@ dotns bulletin upload ./dist --concurrency 32
 dotns bulletin upload ./dist --cache
 
 # Cache with explicit matching Bulletin and Asset Hub targets
-dotns bulletin upload ./dist --cache --env paseo-v2 --bulletin-rpc wss://... --rpc wss://...
+dotns bulletin upload ./dist --cache --env devnet --bulletin-rpc wss://... --rpc wss://...
 
 # Resume an interrupted upload
 dotns bulletin upload ./dist --resume

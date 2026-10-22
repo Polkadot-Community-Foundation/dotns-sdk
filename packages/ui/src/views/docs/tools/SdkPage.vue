@@ -4,8 +4,9 @@
       <p class="text-sm font-medium text-dot-accent mb-2">Tools</p>
       <h1 class="text-4xl font-serif text-dot-text-primary mb-4">SDK</h1>
       <p class="text-lg text-dot-text-secondary leading-relaxed">
-        The operations the CLI runs are exported from <code>@parity/dotns-cli/core</code> as typed
-        functions. Supply your own signer; the SDK manages ABIs and contract addresses.
+        The operations the CLI runs are exported from
+        <code>@polkadot-community-foundation/dotns-cli/core</code> as typed functions. Supply your
+        own signer; the SDK manages ABIs and contract addresses.
       </p>
     </div>
 
@@ -67,16 +68,16 @@ import DocCodeBlock from "@/components/docs/DocCodeBlock.vue";
 const setupCode = `import { createClient } from "polkadot-api";
 import { getWsProvider } from "polkadot-api/ws-provider/web";
 import { paseo } from "@polkadot-api/descriptors";
-import { createDotnsContext, ReviveClientWrapper } from "@parity/dotns-cli/core";
+import { createDotnsContext, ReviveClientWrapper } from "@polkadot-community-foundation/dotns-cli/core";
 
-const client = createClient(getWsProvider("wss://paseo-asset-hub-next-rpc.polkadot.io"));
+const client = createClient(getWsProvider("wss://asset-hub-paseo-rpc.n.dwellir.com"));
 const clientWrapper = new ReviveClientWrapper(client.getTypedApi(paseo));
 
 const ctx = createDotnsContext({
   clientWrapper,
   origin,  // your SS58 address
   signer,  // your PolkadotSigner
-  environment: "paseo-v2",
+  environment: "devnet",
 });`;
 
 const cookbookCode = `import {
@@ -86,7 +87,7 @@ const cookbookCode = `import {
   getContentHash,
   resolveTransferRecipient,
   transferName,
-} from "@parity/dotns-cli/core";
+} from "@polkadot-community-foundation/dotns-cli/core";
 
 // Register a name (owner defaults to your mapped EVM address)
 await registerName(ctx, "alice");
@@ -113,7 +114,7 @@ import { encodeAddress } from "@polkadot/util-crypto";
 // endpoints must be the People chain the wallet is on, or pairing never lands.
 const adapter = createTerminalAdapter({
   appId: "my-app",
-  endpoints: ["wss://paseo-people-next-system-rpc.polkadot.io"],
+  endpoints: ["wss://people-paseo.rotko.net"],
 });
 adapter.sso.pairingStatus.subscribe(async (status) => {
   if (status.step === "pairing") console.log(await renderQrCode(status.payload));

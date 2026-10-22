@@ -232,6 +232,6 @@ dotns content set mydapp bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55f
 const accessCode = `# Open in dot.li (production)
 https://mydapp.dot.li
 
-# Open in dot.li (Paseo testnet)
-https://mydapp.paseo.li`;
+# Open in dev-dot.li (devnet)
+https://mydapp.dev-dot.li`;
 </script>

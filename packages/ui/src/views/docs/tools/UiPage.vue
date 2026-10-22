@@ -6,11 +6,11 @@
       <p class="text-lg text-dot-text-secondary leading-relaxed">
         Search domains, register names, manage profiles, and look up any .dot name at
         <a
-          href="https://dotns.paseo.li"
+          href="https://dotns.dev-dot.li"
           target="_blank"
           rel="noopener"
           class="text-dot-accent hover:text-dot-accent-hover"
-          >dotns.paseo.li</a
+          >dotns.dev-dot.li</a
         >.
       </p>
     </div>

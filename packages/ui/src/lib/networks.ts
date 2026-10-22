@@ -25,6 +25,7 @@ export const SUPPORTED_NETWORKS: Record<number, NetworkConfig> = {
 export const ZERO_SUBSTRATE_ADDRESS = "5DfhGyQdFobKM8NsWvEeAKk5EQQgYe9AydgJ7rMB6E1EqRzV";
 
 export const DEFAULT_NETWORK_ID = 420420417;
+export const IPFS_GATEWAY = "https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs";
 export const TOKEN_UNIT = "PAS";
 // TODO(devnet): set the block explorer URL once known.
 export const BLOCK_EXPLORER = "";
