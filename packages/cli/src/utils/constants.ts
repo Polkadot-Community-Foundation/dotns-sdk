@@ -29,6 +29,7 @@ export function dotliViewUrls(label: string): string[] {
 }
 export const PASEO_ASSET_HUB_URL = "wss://paseo-asset-hub-next-rpc.polkadot.io";
 export const PREVIEWNET_ASSET_HUB_URL = "wss://previewnet.substrate.dev/asset-hub";
+export const POLKADOT_ASSET_HUB_URL = "wss://polkadot-asset-hub-rpc.polkadot.io";
 const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipfs";
 
 // Public Products Devnet, Paseo Asset Hub (para 1000, chain 420420417). These
@@ -38,6 +39,7 @@ const PASEO_IPFS_GATEWAY_URL = "https://paseo-bulletin-next-ipfs.polkadot.io/ipf
 export const DEVNET_ASSET_HUB_URL = "wss://asset-hub-paseo-rpc.n.dwellir.com";
 export const DEVNET_BULLETIN_RPC = "wss://bulletin-paseo.tservices.es:8443";
 export const DEVNET_IPFS_GATEWAY_URL = "https://devnet-ipfs.api.polkadotcommunity.foundation/ipfs";
+
 export const PERSONHOOD_PRECOMPILE_ADDRESS =
   "0x000000000000000000000000000000000a010000" as Address;
 export const PERSONHOOD_CONTEXT =
@@ -62,7 +64,6 @@ export const UPLOAD_RETRY_BASE_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as cons
 // shared authorizer's allowance; raise per-invocation with --transactions / --bytes.
 export const DEFAULT_AUTHORIZATION_TRANSACTIONS = 1000;
 export const DEFAULT_AUTHORIZATION_BYTES = BigInt(104857600);
-export const DEFAULT_VERIFICATION_GATEWAY = PASEO_IPFS_GATEWAY_URL;
 
 export const DEFAULT_NATIVE_TOKEN_DECIMALS = 10;
 export const DEFAULT_NATIVE_TOKEN_SYMBOL = "DOT";
@@ -167,7 +168,14 @@ export const PASEO_BULLETIN_PEERS: readonly string[] = [
   "/dns4/paseo-bulletin-next-rpc-node-1.polkadot.io/tcp/443/wss/p2p/12D3KooWKMc4jJsU7fdEsis4AsM8Assk5jFqhEUEa2ZSiWJGKpfv",
 ];
 
-const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet", "devnet"] as const;
+// Boot nodes from the Polkadot Bulletin chain spec (paritytech/polkadot-bulletin-chain,
+// chainspecs/polkadot-chainspec.json), over wss. Both serve Bitswap.
+const POLKADOT_BULLETIN_PEERS: readonly string[] = [
+  "/dns/bulletin.dpstk.de/tcp/30335/wss/p2p/12D3KooWHPmACsPbXDo9n4qjBZqGEqJ7JLG2fvaCWNCMWyysg6vQ",
+  "/dns/bulletin.amperfix.de/tcp/30335/wss/p2p/12D3KooWMc7ZJ6JGiehG1H45JL69QTPivEBnzm8LihkEEFjYMRnr",
+];
+
+const DOTNS_ENVIRONMENT_IDS = ["paseo-v2", "previewnet", "devnet", "polkadot"] as const;
 export type DotnsEnvironmentId = (typeof DOTNS_ENVIRONMENT_IDS)[number];
 
 export type DotnsContractAddresses = {
@@ -257,8 +265,8 @@ export type DotnsEnvironmentConfig = {
   bulletinRpc: string | null;
   /**
    * IPFS HTTP gateway base URL (with or without trailing `/ipfs`). `null` for
-   * environments where no gateway is operated; verification calls throw and never
-   * fall back to the Paseo gateway.
+   * environments where no gateway is operated; verification then reports the P2P
+   * result alone and probes no other gateway.
    */
   ipfsGatewayUrl: string | null;
   /**
@@ -274,10 +282,9 @@ export type DotnsEnvironmentConfig = {
 // the shared CREATE3 factory with a chain-independent salt, so these addresses
 // are identical on every chain that reuses that factory. paseo-v2 and previewnet
 // are distinct chains with distinct genesis hashes, but both host the factory at
-// 0x8533c79E058c5a6489CAFeCA86dc600E029D75f5, so they share this book. devnet is a
-// separate deployment with its own address set. Note the chain id is 420420417 on
-// all three, so it does not distinguish them and must not be used to decide which
-// book applies.
+// 0x8533c79E058c5a6489CAFeCA86dc600E029D75f5, so they share this book. Note the
+// chain id is 420420417 on both, so it does not distinguish them and must not be
+// used to decide which book applies.
 const PASEO_CREATE3_CONTRACTS: DotnsContractAddresses = {
   DOTNS_REGISTRAR: "0x4f06E818Ba3d987704fd91cf3d868E4b019106Ab" as Address,
   DOTNS_REGISTRAR_CONTROLLER: "0xBdaA01bD1bA67d709F2b1fF286Da0d854977EA30" as Address,
@@ -291,6 +298,24 @@ const PASEO_CREATE3_CONTRACTS: DotnsContractAddresses = {
   DOTNS_POP_CONTROLLER: "0xCC932348606cc1f3318cADeC5A5Cd2CA447f8a4b" as Address,
   DOTNS_NAME_ESCROW: "0x4881Afb78e7C908cAe818168B926229D93376520" as Address,
   MULTICALL3: "0xB4468000abD87D3c56cbFBd153161223D7b109e5" as Address,
+};
+
+// Polkadot Hub address book (dotns repo, deployments/polkadot/420420419.json).
+// The set went through its own CREATE3 factory, so it shares no address with the
+// Paseo book.
+const POLKADOT_CONTRACTS: DotnsContractAddresses = {
+  DOTNS_REGISTRAR: "0x37442d086e282F7C497FC4Ffe00D0A06B84a1f81" as Address,
+  DOTNS_REGISTRAR_CONTROLLER: "0x76c19abE11404e43445670F13173AFA60BED53f8" as Address,
+  DOTNS_REGISTRY: "0x1Ae9a72865eC7092fC7036892f3349748d31A71e" as Address,
+  DOTNS_RESOLVER: "0x62060d4EBb7C375D151E21fDcAED0B9a71727975" as Address,
+  DOTNS_REVERSE_RESOLVER: "0x194Bc50Ed31C0903E5761B37BC85fB7371A86e78" as Address,
+  DOTNS_POP_RESOLVER: "0x41a56012461efa8e3f62B4106240a9c2758D99D8" as Address,
+  DOTNS_CONTENT_RESOLVER: "0xF460c6406217E62A0d2717cD45D6385fe5832001" as Address,
+  STORE_FACTORY: "0xFe75036170a5c800a939DF476D756c3d8FF56A8A" as Address,
+  DOTNS_RULES: "0x088C8de68FD3c199E64C65153B3B628760413BD7" as Address,
+  DOTNS_POP_CONTROLLER: "0xA06d1CB1e3FedFF7b5dFa779b4Cc61703F8A46A1" as Address,
+  DOTNS_NAME_ESCROW: "0xd76134522FAF788F8dF110E1166441E4468d2c81" as Address,
+  MULTICALL3: "0x7ba14c2dD9a8D95d7e6694b96763F0886d99309C" as Address,
 };
 
 export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConfig> = {
@@ -356,9 +381,30 @@ export const DOTNS_ENVIRONMENTS: Record<DotnsEnvironmentId, DotnsEnvironmentConf
     ipfsGatewayUrl: DEVNET_IPFS_GATEWAY_URL,
     bulletinP2pPeers: [],
   },
+  polkadot: {
+    id: "polkadot",
+    label: "Polkadot",
+    aliases: ["polkadot", "mainnet", "polkadot-asset-hub", "dot"],
+    rpc: POLKADOT_ASSET_HUB_URL,
+    genesisHash: "0x68d56f15f85d3136970ec16946040bc1752654e906147f7e43e9d539d7c3de2f",
+    bulletinGenesisHash: "0x2761c95259d59e55ae3daf756c1413b46e45a5a2987299f8ef8e5d8e4776cbc4",
+    blockExplorerUrl: "https://blockscout.polkadot.io",
+    previewBaseUrl: null,
+    dotliGateways: ["dot.li"],
+    contracts: POLKADOT_CONTRACTS,
+    bulletinRpc: "wss://bulletin-rpc.polkadot.io",
+    ipfsGatewayUrl: null,
+    bulletinP2pPeers: POLKADOT_BULLETIN_PEERS,
+  },
 };
 
-export const DEFAULT_DOTNS_ENVIRONMENT: DotnsEnvironmentId = "devnet";
+// The dotNS protocol releases this SDK is built against, oldest first. A network
+// declares the release it runs through `DotnsProtocolRegistry.protocolVersion()`,
+// and the CLI refuses a network that does not declare one of these. The release notes read the compatibility line
+// from here, so the list and the notes cannot disagree.
+export const SUPPORTED_PROTOCOL_VERSIONS = ["0.8.0", "1.0.0"] as const;
+
+const DEFAULT_DOTNS_ENVIRONMENT: DotnsEnvironmentId = "devnet";
 
 let activeDotnsEnvironment: DotnsEnvironmentId = DEFAULT_DOTNS_ENVIRONMENT;
 

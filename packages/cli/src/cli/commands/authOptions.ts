@@ -6,7 +6,7 @@ export function addAuthOptions(cmd: Command): Command {
   return cmd
     .option(
       "--env <environment>",
-      `dotNS environment: paseo-v2, previewnet or devnet (env: ${ENV.DOTNS_ENV})`,
+      `dotNS environment: devnet (default), polkadot, paseo-v2 or previewnet (env: ${ENV.DOTNS_ENV})`,
     )
     .option("--network <environment>", "Alias for --env")
     .option("--rpc <wsUrl>", `WebSocket RPC endpoint (env: ${ENV.RPC})`)
@@ -18,20 +18,23 @@ export function addAuthOptions(cmd: Command): Command {
     .option(
       "--signer <kind>",
       `Signer: keystore (default) or qr [experimental] (env: ${ENV.SIGNER})`,
-      "keystore",
     )
     .option("--qr-app-id <id>", `App id for QR pairing (env: ${ENV.QR_APP_ID})`)
     .option(
       "--qr-people-rpc <stageOrUrls>",
-      `QR pairing relay: paseo|preview|stable or wss URLs (env: ${ENV.QR_PEOPLE_RPC})`,
+      `QR pairing relay: polkadot|paseo|preview|stable or wss URLs (env: ${ENV.QR_PEOPLE_RPC})`,
     )
-    .option("--qr-fresh", "Force a fresh QR pairing, ignoring any cached session");
+    .option("--qr-fresh", "Force a fresh QR pairing, ignoring any cached session")
+    .option(
+      "--allow-dev-account",
+      `Sign with the shared public dev account when no auth is configured (env: ${ENV.ALLOW_DEV_ACCOUNT})`,
+    );
 }
 
 // Global options such as `--env` are declared on the program root, but every
 // leaf command redeclares them via addAuthOptions, so they can be given at any
 // level. Merging only the immediate parent drops a root-level `--env` for a
-// command nested two levels deep (e.g. `dotns --env devnet lookup name`).
+// command nested two levels deep (e.g. `dotns --env previewnet lookup name`).
 // Commander's optsWithGlobals walks the full ancestor chain. It assigns ancestor
 // values over the command's own ("globals overwrite locals"), which is harmless
 // here: Commander stores an option on the outermost command that declares it, so

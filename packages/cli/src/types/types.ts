@@ -135,10 +135,12 @@ export type AuthOptionValues = {
   signer?: "keystore" | "qr";
   /** App id used when pairing a QR mobile wallet */
   qrAppId?: string;
-  /** QR pairing relay: a stage name (paseo|preview|stable) or wss URLs */
+  /** QR pairing relay: a stage name (polkadot|paseo|preview|stable) or wss URLs */
   qrPeopleRpc?: string;
   /** Force a fresh QR pairing instead of reusing the cached session */
   qrFresh?: boolean;
+  /** Opt in to signing with the shared public dev account when no auth resolves */
+  allowDevAccount?: boolean;
 };
 
 export type AccountKeystorePayload = {
@@ -652,6 +654,8 @@ export type AssetHubContext = BaseChainContext & {
   clientWrapper: ReviveClientWrapper;
   /** EVM address (H160) mapped from Substrate address */
   evmAddress: Address;
+  /** Whether the account was already mapped before the context mapped it */
+  accountAlreadyMapped: boolean;
 };
 
 export type BulletinContext = BaseChainContext & {
@@ -1005,6 +1009,8 @@ export type WaveBlock = {
 
 export type CacheCidToStoreOptions = {
   cid: string;
+  // The environment the command selected, whose address book the Store write uses.
+  environment: string;
   clientWrapper: ReviveClientWrapper;
   signer: PolkadotSigner;
   substrateAddress: string;

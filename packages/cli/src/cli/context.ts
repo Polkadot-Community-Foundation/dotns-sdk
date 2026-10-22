@@ -20,6 +20,7 @@ import {
   assertSignerOptions,
   ENV,
 } from "./env";
+import { writeSecurityWarning } from "./commands/jsonHelpers";
 import { createQrSigner } from "./qrSigner";
 import { step, versionLabel } from "./ui";
 import {
@@ -41,6 +42,7 @@ import {
   type DotnsEnvironmentConfig,
 } from "../utils/constants";
 import { createDotnsContext, type DotnsContext, type OperationStatus } from "../core/context";
+import { checkProtocolVersion, UnsupportedProtocolVersionError } from "../core/protocolVersion";
 
 type BuildContextOptions = {
   onStatus?: (status: OperationStatus) => void;
@@ -83,13 +85,27 @@ function resolveRpcEnvironment(options: any): string | undefined {
   return options.env ?? options.network;
 }
 
-function warnIfDefaultSigner(resolvedFrom: string): void {
-  if (resolvedFrom === "default") {
-    console.warn(
-      "Warning: no account configured, signing with the shared public dev account that anyone can control. " +
-        "Set DOTNS_MNEMONIC / DOTNS_KEY_URI or run 'dotns auth set'.",
-    );
+// Nothing but the built-in default resolved, so the run would sign with the
+// mnemonic published in every Substrate tutorial. Refuse unless the caller says
+// that is what they want.
+export function assertSigningAccountConfigured(
+  resolvedFrom: string,
+  allowDevAccount: boolean,
+): void {
+  if (resolvedFrom !== "default") return;
+
+  if (allowDevAccount) {
+    writeSecurityWarning("⚠  Signing with the shared public dev account that anyone can control.");
+    return;
   }
+
+  throw new Error(
+    [
+      "No signing account configured — refusing to sign with the shared public dev account.",
+      `Set ${ENV.MNEMONIC} or ${ENV.KEY_URI}, run 'dotns auth set', or pass --allow-dev-account`,
+      `(env: ${ENV.ALLOW_DEV_ACCOUNT}=1) to sign with the dev account on purpose.`,
+    ].join("\n  "),
+  );
 }
 
 async function logFreeBalance(
@@ -165,6 +181,41 @@ export async function assertExpectedChain(
   );
 }
 
+// Refuses a network unless it declares one of the dotNS protocol releases this CLI
+// supports. Runs before every read and before anything is signed, so a refused
+// network never receives a transaction, account mapping included.
+// `DOTNS_SKIP_VERSION_CHECK=1` bypasses it, for a network the CLI cannot vouch for
+// but the user chooses to use anyway. Prints nothing, for callers that report their
+// own phases.
+export async function assertSupportedProtocolVersion(
+  clientWrapper: ReviveClientWrapper,
+  origin: string,
+  environment: string,
+): Promise<void> {
+  if (process.env[ENV.SKIP_VERSION_CHECK] === "1") return;
+  try {
+    await checkProtocolVersion(createDotnsContext({ clientWrapper, origin, environment }));
+  } catch (error) {
+    // The escape hatch is a CLI setting, so the CLI names it.
+    if (error instanceof UnsupportedProtocolVersionError) {
+      error.message += ` Set ${ENV.SKIP_VERSION_CHECK}=1 to use it anyway.`;
+    }
+    throw error;
+  }
+}
+
+// assertSupportedProtocolVersion behind a progress step.
+export async function enforceProtocolVersion(
+  clientWrapper: ReviveClientWrapper,
+  origin: string,
+  environment: string,
+): Promise<void> {
+  if (process.env[ENV.SKIP_VERSION_CHECK] === "1") return;
+  await step("Checking dotNS protocol version", async () =>
+    assertSupportedProtocolVersion(clientWrapper, origin, environment),
+  );
+}
+
 export async function displayAccountInformation(
   client: PolkadotApiClient,
   evmAddress: Address,
@@ -210,7 +261,30 @@ type ConnectionAndAuth = {
   signer: ReturnType<typeof createSubstrateSigner>;
 };
 
-// Connect to `rpc`, read token metadata, resolve the account and build its signer:
+// Resolves the signing account and applies the dev-account refusal. It needs no chain,
+// so a missing account fails before any network work.
+export async function resolveSigningAuth(
+  options: any,
+  keystorePath: string,
+): Promise<ConnectionAndAuth["auth"]> {
+  const auth = await step("Resolving account", async () =>
+    resolveAuthSource({
+      mnemonic: options.mnemonic,
+      keyUri: options.keyUri,
+      keystorePath,
+      account: options.account,
+      password: options.password,
+    }),
+  );
+
+  assertSigningAccountConfigured(
+    auth.resolvedFrom,
+    options.allowDevAccount === true || process.env[ENV.ALLOW_DEV_ACCOUNT] === "1",
+  );
+  return auth;
+}
+
+// Resolve the account, connect to `rpc`, read token metadata and build the signer:
 // the work shared by every chain context regardless of descriptor.
 async function connectAndAuthenticate(
   options: any,
@@ -219,6 +293,11 @@ async function connectAndAuthenticate(
 ): Promise<ConnectionAndAuth> {
   assertSignerOptions(options);
   const keystorePath = resolveKeystorePath(options.keystorePath);
+  // A paired wallet resolves no local account, so only the keystore signer is checked here.
+  const auth =
+    resolveSignerKind(options.signer) === "qr"
+      ? null
+      : await resolveSigningAuth(options, keystorePath);
 
   const rawClient = await step(`Connecting RPC ${rpc}`, async () =>
     createClient(getWsProvider(rpc)),
@@ -228,7 +307,7 @@ async function connectAndAuthenticate(
     getChainTokenInfo(rawClient),
   );
 
-  if (resolveSignerKind(options.signer) === "qr") {
+  if (auth === null) {
     const { origin, signer } = await step("Pairing mobile wallet", async () =>
       createQrSigner({
         appId: resolveQrAppId(options.qrAppId),
@@ -255,17 +334,6 @@ async function connectAndAuthenticate(
     };
   }
 
-  const auth = await step("Resolving account", async () =>
-    resolveAuthSource({
-      mnemonic: options.mnemonic,
-      keyUri: options.keyUri,
-      keystorePath,
-      account: options.account,
-      password: options.password,
-    }),
-  );
-
-  warnIfDefaultSigner(auth.resolvedFrom);
   const account = await step("Loading keypair", async () =>
     createAccountFromSource(auth.source, auth.isKeyUri),
   );
@@ -310,7 +378,16 @@ function logConfiguration(params: {
   console.log(chalk.gray("  Account:   ") + chalk.white(params.authAccount));
 }
 
-export async function prepareAssetHubContext(options: any): Promise<AssetHubContext> {
+export type AssetHubContextOptions = {
+  // False for commands that only report on the account: they read its mapping
+  // and never submit map_account.
+  mapAccount?: boolean;
+};
+
+export async function prepareAssetHubContext(
+  options: any,
+  { mapAccount = true }: AssetHubContextOptions = {},
+): Promise<AssetHubContext> {
   const environment = resolveDotnsEnvironment(resolveRpcEnvironment(options));
   const rpc = resolveRpc(options.rpc, environment.id);
   const { keystorePath, rawClient, tokenInfo, auth, account, substrateAddress, signer } =
@@ -322,15 +399,19 @@ export async function prepareAssetHubContext(options: any): Promise<AssetHubCont
     clientWrapper.getEvmAddress(substrateAddress),
   );
 
+  await enforceProtocolVersion(clientWrapper, substrateAddress, environment.id);
+
   // Idempotent: submits map_account only when unmapped, so a mapped account incurs no signature.
-  await step("Ensuring account mapped", async () =>
-    clientWrapper.ensureAccountMapped(substrateAddress, signer),
-  );
+  const accountAlreadyMapped = mapAccount
+    ? (await step("Ensuring account mapped", async () =>
+        clientWrapper.ensureAccountMapped(substrateAddress, signer),
+      )) === true
+    : await clientWrapper.checkIfAccountMapped(substrateAddress);
 
   logConfiguration({
     environmentLabel: environment.label,
     rpc,
-    chainLabel: "Polkadot Hub TestNet",
+    chainLabel: environment.id === "polkadot" ? "Polkadot Hub" : "Polkadot Hub TestNet",
     tokenInfo,
     substrateAddress,
     evmAddress,
@@ -354,6 +435,7 @@ export async function prepareAssetHubContext(options: any): Promise<AssetHubCont
     substrateAddress,
     signer,
     evmAddress,
+    accountAlreadyMapped,
     nativeTokenDecimals: tokenInfo.nativeTokenDecimals,
     nativeTokenSymbol: tokenInfo.nativeTokenSymbol,
     client: client as PolkadotApiClient,
