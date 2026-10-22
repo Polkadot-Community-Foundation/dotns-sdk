@@ -42,6 +42,11 @@ export const DEFAULT_QR_APP_ID = "dotns";
 const QR_PEOPLE_STAGES = {
   polkadot: ["wss://polkadot-people-rpc.polkadot.io"],
   paseo: ["wss://paseo-people-next-system-rpc.polkadot.io"],
+  devnet: [
+    "wss://people-paseo.rotko.net",
+    "wss://people-paseo.gatotech.network",
+    "wss://rpc.interweb-it.com/people-paseo",
+  ],
   preview: ["wss://previewnet.substrate.dev/people"],
   stable: ["wss://pop3-testnet.parity-lab.parity.io/people"],
 } as const;
@@ -53,7 +58,7 @@ const ENVIRONMENT_QR_PEOPLE_STAGES: Record<DotnsEnvironmentId, QrPeopleStage> = 
   polkadot: "polkadot",
   "paseo-v2": "paseo",
   previewnet: "preview",
-  devnet: "paseo",
+  devnet: "devnet",
 };
 
 export function resolveSignerKind(maybeKind?: string): SignerKind {
@@ -80,7 +85,7 @@ export function resolveQrPeopleEndpoints(maybeStageOrUrls?: string): string[] {
     .filter(Boolean);
   if (urls.length === 0) {
     throw new Error(
-      `No QR pairing relay resolved from "${value}". Use a stage (polkadot|paseo|preview|stable) or wss URLs.`,
+      `No QR pairing relay resolved from "${value}". Use a stage (polkadot|paseo|devnet|preview|stable) or wss URLs.`,
     );
   }
   for (const url of urls) {

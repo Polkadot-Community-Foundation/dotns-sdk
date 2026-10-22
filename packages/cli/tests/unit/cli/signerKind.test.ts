@@ -65,6 +65,12 @@ describe("resolveQrPeopleEndpoints", () => {
       ]);
       setActiveDotnsEnvironment("previewnet");
       expect(resolveQrPeopleEndpoints()).toEqual(["wss://previewnet.substrate.dev/people"]);
+      setActiveDotnsEnvironment("devnet");
+      expect(resolveQrPeopleEndpoints()).toEqual([
+        "wss://people-paseo.rotko.net",
+        "wss://people-paseo.gatotech.network",
+        "wss://rpc.interweb-it.com/people-paseo",
+      ]);
     } finally {
       setActiveDotnsEnvironment("paseo-v2");
     }

@@ -126,10 +126,10 @@ also seeds the signing account; override it with `--qr-app-id` / `DOTNS_QR_APP_I
 
 Pairing rendezvous happens on a People-chain relay, and the CLI and the wallet must be on the same
 one or the wallet's response never arrives and pairing hangs. By default the CLI uses the relay of
-the selected environment: `paseo` on `devnet` and `paseo-v2`, `polkadot` on `polkadot`, `preview`
-on `previewnet`. Select another to match the wallet's network with `--qr-people-rpc` /
-`DOTNS_QR_PEOPLE_RPC`: `polkadot`, `paseo`, `preview`, `stable`, or a comma-separated list of `wss`
-URLs. Set `DOTNS_QR_DEBUG=1` to print the verbose
+the selected environment: `devnet` (People 1004) on `devnet`, `paseo` on `paseo-v2`, `polkadot` on
+`polkadot`, `preview` on `previewnet`. Select another to match the wallet's network with
+`--qr-people-rpc` / `DOTNS_QR_PEOPLE_RPC`: `polkadot`, `paseo`, `devnet`, `preview`, `stable`, or a
+comma-separated list of `wss` URLs. Set `DOTNS_QR_DEBUG=1` to print the verbose
 pairing handshake trace when diagnosing a stuck pairing.
 
 ## Environment Variables
@@ -150,7 +150,7 @@ pairing handshake trace when diagnosing a stuck pairing.
 | `DOTNS_KEY_URI`             | Substrate key URI                                                  |
 | `DOTNS_SIGNER`              | Signer backend: `keystore` (default) or `qr`                       |
 | `DOTNS_QR_APP_ID`           | Product id for QR pairing (default `dotns`)                        |
-| `DOTNS_QR_PEOPLE_RPC`       | QR relay: `polkadot`/`paseo`/`preview`/`stable` or wss URLs        |
+| `DOTNS_QR_PEOPLE_RPC`       | QR relay stage (see above) or wss URLs                             |
 | `DOTNS_QR_DEBUG`            | Set to print the verbose QR pairing trace                          |
 
 Select an environment with either an environment variable or a per-command option:

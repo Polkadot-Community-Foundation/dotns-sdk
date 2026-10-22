@@ -22,7 +22,7 @@ export function addAuthOptions(cmd: Command): Command {
     .option("--qr-app-id <id>", `App id for QR pairing (env: ${ENV.QR_APP_ID})`)
     .option(
       "--qr-people-rpc <stageOrUrls>",
-      `QR pairing relay: polkadot|paseo|preview|stable or wss URLs (env: ${ENV.QR_PEOPLE_RPC})`,
+      `QR pairing relay: polkadot|paseo|devnet|preview|stable or wss URLs (env: ${ENV.QR_PEOPLE_RPC})`,
     )
     .option("--qr-fresh", "Force a fresh QR pairing, ignoring any cached session")
     .option(
