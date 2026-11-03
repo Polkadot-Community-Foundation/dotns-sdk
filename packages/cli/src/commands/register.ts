@@ -39,7 +39,7 @@ import {
 } from "../utils/constants";
 import {
   validateDomainLabel,
-  validateGovernanceLabel,
+  validateGrantedLabel,
   validateParentPath,
   baseLabelOf,
 } from "../utils/validation";
@@ -187,8 +187,9 @@ export type GenerateCommitmentOptions = {
   includeReverse?: boolean;
   /**
    * Set for commitments that will be revealed through registerReserved. That path
-   * bypasses PopRules, so the label is validated against the controller's own rules
-   * (validateGovernanceLabel) instead of the PopRules-derived validateDomainLabel.
+   * bypasses PopRules and the grant decides which names reach it, so the label is
+   * validated against the controller's own rules (validateGrantedLabel) instead of
+   * the PopRules-derived validateDomainLabel.
    */
   governance?: boolean;
 };
@@ -258,7 +259,7 @@ export async function generateCommitment(
 ): Promise<GeneratedCommitment> {
   const label = await normaliseName(ctx, name);
   if (opts.governance) {
-    validateGovernanceLabel(label);
+    validateGrantedLabel(label);
   } else {
     validateDomainLabel(label);
   }
@@ -318,7 +319,7 @@ async function readCommitmentTimestamp(ctx: DotnsContext, commitment: Hex): Prom
   );
 }
 
-async function readChainNowSeconds(ctx: DotnsContext): Promise<number> {
+export async function readChainNowSeconds(ctx: DotnsContext): Promise<number> {
   // Prefer chain block.timestamp via Timestamp::Now (milliseconds); fall back to
   // wall-clock only if the pallet storage isn't available on this runtime.
   const timestampQuery = (ctx.clientWrapper.client as any).query?.Timestamp?.Now;
@@ -464,6 +465,8 @@ export async function getPriceAndValidateEligibility(
     [baseName],
   );
 
+  // The reservation's own owner is left to PopRules' quote below: up to protocol 1.0.0 they may
+  // register the name, and from 1.1.0 a live reservation blocks every account.
   if (isReserved && checksumAddress(reservationOwner) !== checksumAddress(ownerAddress)) {
     throw new Error("Reserved for a device-name holder's personhood claim");
   }

@@ -21,6 +21,11 @@ import {
 } from "../../commands/register";
 import { isNameGrantedTo } from "../../commands/accountChecks";
 import {
+  explainReservedRefusal,
+  getReservationQueue,
+  RESERVED_FOR_CLAIM,
+} from "../../commands/reservationQueue";
+import {
   saveCommitmentRecord,
   loadCommitmentRecords,
   findCommitmentRecord,
@@ -37,6 +42,7 @@ import {
   isDeviceLabel,
   validateDomainLabel,
   validateGovernanceLabel,
+  validateGrantedLabel,
 } from "../../utils/validation";
 import {
   type DomainRegistration,
@@ -501,6 +507,24 @@ async function replayTransfer(
   );
 }
 
+// PopRules refuses a name while its queue holds it, including one whose reservations have
+// all expired or been left until a call clears them. Adds what the queue says about it.
+async function withQueueHint<T>(
+  ctx: DotnsContext,
+  label: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith(RESERVED_FOR_CLAIM)) throw error;
+    const queue = await getReservationQueue(ctx, label).catch(() => null);
+    const hint = queue === null ? null : explainReservedRefusal(queue);
+    if (hint === null) throw error;
+    throw new Error(`${error.message}. ${hint}`, { cause: error });
+  }
+}
+
 /** Price the name and submit the regular reveal. */
 async function finalizeRegularReveal(
   session: RegistrationSession,
@@ -511,7 +535,9 @@ async function finalizeRegularReveal(
   const isCrossPayer = checksumAddress(ownerEvmAddress) !== checksumAddress(session.caller);
 
   const pricing = await step("Pricing and eligibility", async () =>
-    getPriceAndValidateEligibility(session.ctx, label, ownerEvmAddress),
+    withQueueHint(session.ctx, label, () =>
+      getPriceAndValidateEligibility(session.ctx, label, ownerEvmAddress),
+    ),
   );
   printPricing(pricing, ownerEvmAddress, isCrossPayer, session.ctx.nativeTokenSymbol);
 
@@ -530,18 +556,6 @@ async function executeGovernanceRegistration(
 ): Promise<void> {
   console.log(chalk.bold("\n🏛 Governance registration (commit-reveal)\n"));
 
-  // This path submits through DotnsRegistrarController.registerReserved, which
-  // never consults PopRules: its only on-chain label checks are isSingleLabel()
-  // (InvalidLabel) and length >= 3 (LabelTooShort). Hence validateGovernanceLabel.
-  // validateDomainLabel refuses a device name outright because only the gateway
-  // pallet issues one.
-  //
-  // The base <= 5 bound it does apply is not a registerReserved requirement; it
-  // mirrors PopRules' `baseLength <= 5 -> Reserved` classification. Kept
-  // deliberately: it holds this command to the reserved class it is for and keeps
-  // what a grant holder can mint here unchanged.
-  validateGovernanceLabel(label);
-
   // registerReserved is gated on the name whitelist, or on a Root origin; the
   // caller's personhood status plays no part. Surfaced as information only: a
   // Root-origin mint skips the grant check, so a `false` here is a warning and
@@ -549,6 +563,15 @@ async function executeGovernanceRegistration(
   const granted = await step("Checking name grant", async () =>
     isNameGrantedTo(session.ctx, label, session.caller).catch(() => null),
   );
+
+  // registerReserved never consults PopRules, so a held grant decides which names reach
+  // it. Without one, the base <= 5 bound mirrors PopRules' Reserved class.
+  if (granted === true) {
+    validateGrantedLabel(label);
+  } else {
+    validateGovernanceLabel(label);
+  }
+
   if (granted === false) {
     console.log(
       chalk.yellow("  ⚠ name is not granted to the caller; ") +
@@ -563,27 +586,29 @@ async function executeGovernanceRegistration(
   // only blocker here is a definite non-Reserved classification. Anything
   // other than a revert propagates out of tryClassifyDomainName, so an unreachable
   // chain cannot masquerade as "unclassifiable" and unlock this path.
-  let unclassifiableReason: string | undefined;
-  const classification = await step("Classifying name", async () =>
-    tryClassifyDomainName(session.ctx, label, {
-      onUnclassifiable: (reason) => {
-        unclassifiableReason = reason;
-      },
-    }),
-  );
+  if (granted !== true) {
+    let unclassifiableReason: string | undefined;
+    const classification = await step("Classifying name", async () =>
+      tryClassifyDomainName(session.ctx, label, {
+        onUnclassifiable: (reason) => {
+          unclassifiableReason = reason;
+        },
+      }),
+    );
 
-  if (classification === null) {
-    console.log(
-      chalk.yellow("  ⚠ PopRules cannot classify this label shape; ") +
-        chalk.gray("registerReserved bypasses PopRules, continuing"),
-    );
-    if (unclassifiableReason) {
-      console.log(chalk.gray(`    ${unclassifiableReason}`));
+    if (classification === null) {
+      console.log(
+        chalk.yellow("  ⚠ PopRules cannot classify this label shape; ") +
+          chalk.gray("registerReserved bypasses PopRules, continuing"),
+      );
+      if (unclassifiableReason) {
+        console.log(chalk.gray(`    ${unclassifiableReason}`));
+      }
+    } else if (classification.requiredStatus !== ProofOfPersonhoodStatus.Reserved) {
+      throw new Error(
+        `Governance name must classify as Reserved; got ${ProofOfPersonhoodStatus[classification.requiredStatus]}`,
+      );
     }
-  } else if (classification.requiredStatus !== ProofOfPersonhoodStatus.Reserved) {
-    throw new Error(
-      `Governance name must classify as Reserved; got ${ProofOfPersonhoodStatus[classification.requiredStatus]}`,
-    );
   }
 
   await step("Checking availability", async () => ensureDomainNotRegistered(session.ctx, label));
