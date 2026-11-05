@@ -2,19 +2,15 @@ import {
   ContractManager,
   createContract,
   type AbiEntry,
-  type CdmJson,
   type Contract,
   type ContractDef,
   type TxOptions,
 } from "@parity/product-sdk-contracts";
 import { devnet_asset_hub } from "@parity/product-sdk-descriptors/devnet-asset-hub";
 import type { HexString, SS58String } from "polkadot-api";
-import cdmJsonRaw from "../../cdm.json" with { type: "json" };
 import { labelStoreAbi } from "@/lib/abis/labelStore";
 import { userStoreAbi } from "@/lib/abis/userStore";
-import { nameEscrowAbi, NAME_ESCROW_ADDRESS } from "@/lib/abis/nameEscrow";
-import { popControllerAbi, POP_CONTROLLER_ADDRESS } from "@/lib/abis/popController";
-import { popResolverAbi, POP_RESOLVER_ADDRESS } from "@/lib/abis/popResolver";
+import { cdmJson } from "@/lib/cdm";
 import { getChainClient } from "@/composables/useTypedAPI";
 import { useNetworkStore } from "@/store/useNetworkStore";
 import { signerManager } from "@/store/useWalletStore";
@@ -40,32 +36,6 @@ export const WRITE_TX_DEFAULTS: Pick<TxOptions, "storageDepositLimit" | "waitFor
   storageDepositLimit: 10_000_000_000_000n,
   waitFor: "finalized",
 };
-
-// `cdm install` (cdm 0.8.17) writes a target-bucketed manifest:
-//   { targets: { <hash>: { registry } }, dependencies: { <hash>: {…} }, contracts: { <hash>: {…} } }
-// ContractManager 0.7.x reads the flat shape ({ registry, dependencies, contracts }).
-// Normalise at load by lifting the registry-bearing target to the top level —
-// survives future `cdm install` runs without a post-process step.
-type NestedCdm = {
-  targets?: Record<string, { registry?: HexString }>;
-  dependencies?: Record<string, CdmJson["dependencies"]>;
-  contracts?: Record<string, CdmJson["contracts"]>;
-};
-
-function flattenCdm(raw: NestedCdm): CdmJson {
-  const targetsMap = raw.targets;
-  if (!targetsMap) return raw as unknown as CdmJson;
-  const keys = Object.keys(targetsMap);
-  const target = keys.find((k) => targetsMap[k]?.registry) ?? keys[0];
-  if (!target) return raw as unknown as CdmJson;
-  return {
-    registry: targetsMap[target]?.registry,
-    dependencies: raw.dependencies?.[target] ?? {},
-    contracts: raw.contracts?.[target] ?? {},
-  } as CdmJson;
-}
-
-const cdmJson = flattenCdm(cdmJsonRaw as unknown as NestedCdm);
 
 // Per-user store proxies whose LOGIC ABI is not published to the CDM registry
 // (only the StoreFactory + beacon are — see src/lib/abis/labelStore.ts). The
@@ -116,25 +86,20 @@ export async function getProxyContract(
   return createContract(m.getRuntime(), address, abi, { signerManager });
 }
 
-// Contracts absent from the CDM meta-registry are wired by explicit address +
-// vendored ABI (name escrow, PoP controller, PoP resolver), mirroring how the
-// personhood precompile is resolved.
-async function getVendoredContract(
-  address: HexString,
-  abi: AbiEntry[],
-): Promise<Contract<ContractDef>> {
-  const m = await getContractManager();
-  return createContract(m.getRuntime(), address, abi, { signerManager });
-}
-
 export const getEscrowContract = (): Promise<Contract<ContractDef>> =>
-  getVendoredContract(NAME_ESCROW_ADDRESS, nameEscrowAbi);
+  getContract("@dotns/name-escrow");
 
 export const getPopControllerContract = (): Promise<Contract<ContractDef>> =>
-  getVendoredContract(POP_CONTROLLER_ADDRESS, popControllerAbi);
+  getContract("@dotns/pop-controller");
 
 export const getPopResolverContract = (): Promise<Contract<ContractDef>> =>
-  getVendoredContract(POP_RESOLVER_ADDRESS, popResolverAbi);
+  getContract("@dotns/pop-resolver");
+
+// Live escrow address, e.g. as the spender a name owner approves before release.
+export async function getEscrowAddress(): Promise<HexString> {
+  const m = await getContractManager();
+  return m.getAddress("@dotns/name-escrow");
+}
 
 export function getAbi(library: string): AbiEntry[] {
   const entry = cdmJson.contracts?.[library];

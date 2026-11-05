@@ -1,6 +1,5 @@
 import { decodeErrorResult, type Abi, type Hex } from "viem";
-import cdmJsonRaw from "../../cdm.json" with { type: "json" };
-import { nameEscrowAbi } from "./abis/nameEscrow";
+import { cdmJson } from "./cdm";
 import { labelStoreAbi } from "./abis/labelStore";
 import { userStoreAbi } from "./abis/userStore";
 
@@ -17,13 +16,7 @@ function collectErrorFragments(): Abi {
     }
   };
 
-  const contracts = (
-    cdmJsonRaw as { contracts?: Record<string, Record<string, { abi?: unknown[] }>> }
-  ).contracts;
-  for (const target of Object.values(contracts ?? {})) {
-    for (const entry of Object.values(target)) add(entry.abi);
-  }
-  add(nameEscrowAbi);
+  for (const entry of Object.values(cdmJson.contracts ?? {})) add(entry.abi);
   add(labelStoreAbi);
   add(userStoreAbi);
 
