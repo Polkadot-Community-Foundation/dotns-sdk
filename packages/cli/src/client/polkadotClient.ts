@@ -1,4 +1,4 @@
-import type { Paseo } from "@polkadot-api/descriptors";
+import { paseo, polkadotAssetHub, type Paseo } from "@polkadot-api/descriptors";
 import { Binary, type PolkadotClient, type PolkadotSigner, type TypedApi } from "polkadot-api";
 import { decodeAddress } from "@polkadot/util-crypto";
 import { isAddress, type Address, type Hash } from "viem";
@@ -7,6 +7,23 @@ import { ensureError, formatDispatchError } from "../utils/formatting";
 import { DEFAULT_NATIVE_TOKEN_DECIMALS, DEFAULT_NATIVE_TOKEN_SYMBOL } from "../utils/constants";
 
 export type PolkadotApiClient = TypedApi<Paseo>;
+
+// Each network's own metadata backs PAPI's runtime checks; Polkadot shares Paseo's call
+// shapes for everything the SDK uses, so one compile-time type serves both.
+export function getAssetHubTypedApi(
+  rawClient: PolkadotClient,
+  environmentId: string,
+): PolkadotApiClient {
+  if (environmentId === "polkadot") {
+    return rawClient.getTypedApi(polkadotAssetHub) as unknown as PolkadotApiClient;
+  }
+  return rawClient.getTypedApi(paseo);
+}
+
+export type FinalizedExtrinsic = {
+  txHash: Hash;
+  events: { type: string; value: { type: string; value: any } }[];
+};
 
 /** Native token decimals and symbol of a chain, as reported by its chain spec properties. */
 export type NativeTokenInfo = {
@@ -151,7 +168,7 @@ function unwrapExecutionResult(rawResult: any): {
 
 // Compares two SS58 addresses by their decoded public key, so a differing network
 // prefix does not register as a different account.
-function isSameSubstrateAccount(a: string, b: string): boolean {
+export function isSameSubstrateAccount(a: string, b: string): boolean {
   try {
     const decodedA = decodeAddress(a);
     const decodedB = decodeAddress(b);
@@ -345,12 +362,26 @@ export class ReviveClientWrapper {
 
   async checkIfAccountMapped(address: string): Promise<boolean> {
     try {
-      const evmAddress = isAddress(address) ? address : await this.getEvmAddress(address);
-      const key = Binary.fromHex(evmAddress);
-      const mappedAccount = await this.client.query.Revive.OriginalAccount.getValue(key);
-      return mappedAccount !== null && mappedAccount !== undefined;
+      return await this.readAccountMapping(address);
     } catch {
       return false;
+    }
+  }
+
+  // A failed read is not an answer: treating it as "unmapped" would sign a map_account
+  // the chain then rejects. Retried once, since a slow node can drop a single read.
+  async readAccountMapping(address: string): Promise<boolean> {
+    const read = async () => {
+      const evmAddress = isAddress(address) ? address : await this.getEvmAddress(address);
+      const mapped = await this.client.query.Revive.OriginalAccount.getValue(
+        Binary.fromHex(evmAddress),
+      );
+      return mapped !== null && mapped !== undefined;
+    };
+    try {
+      return await read();
+    } catch {
+      return await read();
     }
   }
 
@@ -365,7 +396,7 @@ export class ReviveClientWrapper {
 
     if (this.mappedAccounts.has(substrateAddress)) return true;
 
-    const isMapped = await this.checkIfAccountMapped(substrateAddress);
+    const isMapped = await this.readAccountMapping(substrateAddress);
     if (isMapped) {
       this.mappedAccounts.add(substrateAddress);
       return isMapped;
@@ -390,7 +421,7 @@ export class ReviveClientWrapper {
       }
       // A rejected submission (e.g. a stale nonce from a racing map) may still have left
       // the account mapped, so confirm against chain before surfacing the error.
-      if (await this.checkIfAccountMapped(substrateAddress)) {
+      if (await this.readAccountMapping(substrateAddress)) {
         this.mappedAccounts.add(substrateAddress);
         return true;
       }
@@ -410,9 +441,26 @@ export class ReviveClientWrapper {
     signerSubstrateAddress: string,
     signal?: AbortSignal,
   ): Promise<Hash> {
+    const finalized = await this.submitExtrinsic(
+      extrinsic,
+      signer,
+      statusCallback,
+      signerSubstrateAddress,
+      signal,
+    );
+    return finalized.txHash;
+  }
+
+  async submitExtrinsic(
+    extrinsic: any,
+    signer: PolkadotSigner,
+    statusCallback: (status: TransactionStatus) => void,
+    signerSubstrateAddress: string,
+    signal?: AbortSignal,
+  ): Promise<FinalizedExtrinsic> {
     const nonce = await this.fetchNextNonce(signerSubstrateAddress);
 
-    return new Promise<Hash>((resolve, reject) => {
+    return new Promise<FinalizedExtrinsic>((resolve, reject) => {
       let subscription: { unsubscribe: () => void } | undefined;
       let settled = false;
 
@@ -461,7 +509,9 @@ export class ReviveClientWrapper {
                   return;
                 }
                 statusCallback("finalized");
-                settle(() => resolve(transactionHash as Hash));
+                settle(() =>
+                  resolve({ txHash: transactionHash as Hash, events: event.events ?? [] }),
+                );
                 return;
               case "invalid":
               case "dropped":
