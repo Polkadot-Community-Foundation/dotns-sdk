@@ -1,7 +1,11 @@
 import { defineStore } from "pinia";
 import { zeroAddress, type Address, type Hash } from "viem";
-import { getContract, getEscrowContract, withContractRecovery } from "@/composables/useContracts";
-import { NAME_ESCROW_ADDRESS } from "@/lib/abis/nameEscrow";
+import {
+  getContract,
+  getEscrowAddress,
+  getEscrowContract,
+  withContractRecovery,
+} from "@/composables/useContracts";
 import { useContractWrite } from "@/lib/contractWrite";
 import { isAccountPosition } from "@/lib/escrowStatus";
 import { computeDomainTokenId, normalizeDomainName, ZERO_SUBSTRATE_ADDRESS } from "../utils";
@@ -146,7 +150,7 @@ export const useEscrowStore = defineStore("useEscrowStore", () => {
     return withWrite(async () => {
       const registrar = await getContract("@dotns/registrar");
       await submitWrite(
-        registrar.approve!.tx(NAME_ESCROW_ADDRESS, tokenId, txOptions()),
+        registrar.approve!.tx(await getEscrowAddress(), tokenId, txOptions()),
         "Approve",
       );
       const escrow = await getEscrowContract();
